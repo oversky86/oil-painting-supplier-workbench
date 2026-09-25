@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fbf8f3;
+  --foreground: #2d241b;
+  --card: #ffffff;
+  --border: #dccfbc;
+  --muted: #6c6054;
+  --primary: #31271f;
+  --accent: #eaf6ed;
+  --danger: #d6534c;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    "Helvetica Neue",
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
