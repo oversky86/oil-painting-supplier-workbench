@@ -22,12 +22,12 @@ export default function LoginPage() {
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
-        throw new Error(json.error || "Login failed");
+        throw new Error(json.error || "登录失败");
       }
       router.replace("/orders");
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Login failed");
+      setError(cause instanceof Error ? cause.message : "登录失败");
     } finally {
       setBusy(false);
     }
@@ -43,14 +43,14 @@ export default function LoginPage() {
           ViewBrush Studio
         </p>
         <h1 className="mt-2 text-3xl font-semibold text-[#241c16]">
-          Supplier login
+          供应商登录
         </h1>
         <p className="mt-2 text-sm text-[#6c6054]">
-          Sign in with the studio admin account to manage portraits and shipping.
+          使用工作室管理员账号登录，处理画像交付和发货。
         </p>
 
         <label className="mt-8 block text-sm font-medium text-[#241c16]">
-          Username
+          用户名
           <input
             className="mt-2 w-full rounded-[8px] border border-[#dccfbc] bg-[#fbf8f3] px-3 py-3 outline-none focus:border-[#31271f]"
             value={username}
@@ -61,7 +61,7 @@ export default function LoginPage() {
         </label>
 
         <label className="mt-4 block text-sm font-medium text-[#241c16]">
-          Password
+          密码
           <input
             type="password"
             className="mt-2 w-full rounded-[8px] border border-[#dccfbc] bg-[#fbf8f3] px-3 py-3 outline-none focus:border-[#31271f]"
@@ -83,7 +83,7 @@ export default function LoginPage() {
           disabled={busy}
           className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#31271f] px-5 text-[15px] font-semibold text-white hover:bg-[#241c16]"
         >
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? "登录中…" : "登录"}
         </button>
       </form>
     </main>

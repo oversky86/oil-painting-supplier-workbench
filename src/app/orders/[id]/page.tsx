@@ -4,21 +4,26 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  MAX_PORTRAIT_VERSIONS,
   statusLabel,
   type ModificationNote,
   type SupplierOrderDetail,
 } from "@/lib/types";
 
-function attr(
-  attrs: Array<{ key: string; value?: string | null }> | null | undefined,
-  key: string,
-) {
-  const hidden = `_${key}`;
+type LineItem = SupplierOrderDetail["lineItems"][number];
+
+/** Theme line-item properties (`buildLineProperties` in viewbrush-flow.js); hidden keys carry a `_` prefix. */
+function attr(line: LineItem | undefined, key: string) {
+  const attrs = line?.customAttributes || [];
   return (
-    attrs?.find((a) => a.key === hidden)?.value ||
-    attrs?.find((a) => a.key === key)?.value ||
+    attrs.find((a) => a.key === `_${key}`)?.value ||
+    attrs.find((a) => a.key === key)?.value ||
     ""
   );
+}
+
+function formatTime(value?: string | null) {
+  return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "";
 }
 
 function NoteOverlay({
@@ -32,10 +37,10 @@ function NoteOverlay({
     <div className="relative overflow-hidden rounded-[10px] border border-[#dccfbc] bg-[#efe8dd]">
       {imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={imageUrl} alt="Portrait with annotations" className="block w-full" />
+        <img src={imageUrl} alt="带标注的画像" className="block w-full" />
       ) : (
         <div className="flex h-72 items-center justify-center text-sm text-[#6c6054]">
-          No image
+          没有图片
         </div>
       )}
       {notes.map((note, index) => (
@@ -58,20 +63,49 @@ function NoteOverlay({
   );
 }
 
-async function uploadToSignedUrl(file: File, uploadUrl: string, token: string) {
-  // Supabase signed upload URL already includes the token query string.
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-      "x-upsert": "true",
-    },
-    body: file,
-  });
-  if (!res.ok) {
-    throw new Error(`Upload failed (${res.status}). Token present: ${Boolean(token)}`);
-  }
+function NoteList({ notes, dark }: { notes: ModificationNote[]; dark?: boolean }) {
+  return (
+    <ol className={`grid gap-2 text-sm ${dark ? "text-white/90" : "text-[#31271f]"}`}>
+      {notes.map((note, index) => (
+        <li
+          key={note.id}
+          className={`rounded-[8px] px-3 py-2 ${dark ? "bg-white/10" : "bg-[#f7f0e6]"}`}
+        >
+          <strong>#{note.index || index + 1}</strong> {note.text}
+        </li>
+      ))}
+    </ol>
+  );
 }
+
+/** PUT to a Supabase signed upload URL with byte-level progress. */
+function uploadWithProgress(
+  file: File,
+  uploadUrl: string,
+  onProgress: (loaded: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader("x-upsert", "true");
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(file.size);
+        resolve();
+      } else {
+        reject(new Error(`上传失败（${xhr.status}）`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("网络中断，上传失败"));
+    xhr.send(file);
+  });
+}
+
+type UploadProgress = { label: string; percent: number } | null;
 
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -83,7 +117,7 @@ export default function OrderDetailPage() {
   const [busy, setBusy] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState("");
+  const [progress, setProgress] = useState<UploadProgress>(null);
   const [trackingCompany, setTrackingCompany] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -100,10 +134,10 @@ export default function OrderDetailPage() {
         return;
       }
       const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Failed to load");
+      if (!res.ok || !json.ok) throw new Error(json.error || "订单加载失败");
       setOrder(json.order);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to load");
+      setError(cause instanceof Error ? cause.message : "订单加载失败");
     } finally {
       setLoading(false);
     }
@@ -126,68 +160,69 @@ export default function OrderDetailPage() {
     return version?.imageUrl || order.versions[order.versions.length - 1]?.imageUrl;
   }, [order, latestRequest]);
 
-  const line = order?.lineItems?.[0];
-  const attrs = line?.customAttributes || [];
-
-  async function createUploadUrl(kind: "image" | "video", file: File) {
+  async function postAction(payload: Record<string, unknown>) {
     const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "create_upload_url",
-        kind,
-        contentType: file.type || (kind === "image" ? "image/jpeg" : "video/mp4"),
-      }),
+      body: JSON.stringify(payload),
     });
-    const json = await res.json();
-    if (!res.ok || !json.ok) {
-      throw new Error(json.error || "Could not create upload URL");
+    if (res.status === 401) {
+      router.replace("/");
+      throw new Error("登录已过期");
     }
-    return json as { path: string; uploadUrl: string; token: string };
+    const json = await res.json().catch(() => ({ ok: false }));
+    if (!res.ok || !json.ok) {
+      const prefix =
+        res.status === 409
+          ? "订单状态已变化，请刷新页面后重试"
+          : res.status === 422
+            ? "Shopify 发货失败"
+            : res.status === 502
+              ? "Shopify 状态同步失败"
+              : "操作失败";
+      throw new Error(json.error ? `${prefix}（${json.error}）` : prefix);
+    }
+    return json;
   }
 
   async function onUpload(event: FormEvent) {
     event.preventDefault();
-    if (!imageFile) {
-      setError("Portrait image is required");
+    if (!imageFile || !videoFile) {
+      setError("成品图和工作室视频都要上传");
       return;
     }
     setBusy(true);
     setError("");
+    const total = imageFile.size + videoFile.size;
+    const report = (label: string, loaded: number) =>
+      setProgress({ label, percent: Math.min(100, Math.round((loaded / total) * 100)) });
     try {
-      setProgress("Preparing image upload…");
-      const imageSigned = await createUploadUrl("image", imageFile);
-      setProgress("Uploading image…");
-      await uploadToSignedUrl(imageFile, imageSigned.uploadUrl, imageSigned.token);
+      report("正在准备上传…", 0);
+      const [imageSigned, videoSigned] = await Promise.all([
+        postAction({ action: "create_upload_url", kind: "image", contentType: imageFile.type }),
+        postAction({ action: "create_upload_url", kind: "video", contentType: videoFile.type }),
+      ]);
 
-      let videoPath: string | null = null;
-      if (videoFile) {
-        setProgress("Preparing video upload…");
-        const videoSigned = await createUploadUrl("video", videoFile);
-        setProgress("Uploading video…");
-        await uploadToSignedUrl(videoFile, videoSigned.uploadUrl, videoSigned.token);
-        videoPath = videoSigned.path;
-      }
+      await uploadWithProgress(imageFile, imageSigned.uploadUrl, (loaded) =>
+        report("正在上传成品图…", loaded),
+      );
+      await uploadWithProgress(videoFile, videoSigned.uploadUrl, (loaded) =>
+        report("正在上传工作室视频…", imageFile.size + loaded),
+      );
 
-      setProgress("Confirming delivery…");
-      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "confirm_upload",
-          imagePath: imageSigned.path,
-          videoPath,
-        }),
+      report("正在提交给客户审阅…", total);
+      await postAction({
+        action: "confirm_upload",
+        imagePath: imageSigned.path,
+        videoPath: videoSigned.path,
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Confirm failed");
       setImageFile(null);
       setVideoFile(null);
-      setProgress("");
+      setProgress(null);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Upload failed");
-      setProgress("");
+      setError(cause instanceof Error ? cause.message : "上传失败");
+      setProgress(null);
     } finally {
       setBusy(false);
     }
@@ -198,35 +233,25 @@ export default function OrderDetailPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "ship",
-          trackingCompany,
-          trackingNumber,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Ship failed");
+      await postAction({ action: "ship", trackingCompany, trackingNumber });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Ship failed");
+      setError(cause instanceof Error ? cause.message : "发货失败");
     } finally {
       setBusy(false);
     }
   }
 
-  if (loading) {
-    return <p className="p-8 text-sm text-[#6c6054]">Loading order…</p>;
+  if (loading && !order) {
+    return <p className="p-8 text-sm text-[#6c6054]">正在加载订单…</p>;
   }
 
   if (!order) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-[#a33b35]">{error || "Order not found"}</p>
+        <p className="text-[#a33b35]">{error || "找不到这个订单"}</p>
         <Link href="/orders" className="mt-4 inline-block text-sm underline">
-          Back to orders
+          返回订单列表
         </Link>
       </main>
     );
@@ -237,11 +262,12 @@ export default function OrderDetailPage() {
     order.businessStatus === "supplier_modification";
   const canShip = order.businessStatus === "prepare_shipment";
   const nextVersion = (order.versionCount || 0) + 1;
+  const isRevision = order.businessStatus === "supplier_modification";
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-8">
       <Link href="/orders?tab=action" className="text-sm text-[#6c6054] hover:text-[#241c16]">
-        ← Back to orders
+        ← 返回订单列表
       </Link>
 
       <header className="mt-4 flex flex-wrap items-center gap-4">
@@ -251,7 +277,7 @@ export default function OrderDetailPage() {
         </span>
       </header>
       <p className="mt-2 text-sm text-[#6c6054]">
-        {order.email || "No email"} · {new Date(order.createdAt).toLocaleString()}
+        {order.email || "无邮箱"} · 下单于 {formatTime(order.createdAt)}
       </p>
 
       {error ? (
@@ -261,47 +287,49 @@ export default function OrderDetailPage() {
       ) : null}
 
       <section className="mt-6 rounded-[12px] border border-[#31271f] bg-[#31271f] p-5 text-white md:p-6">
-        <h2 className="text-xl font-semibold">What to do next</h2>
+        <h2 className="text-xl font-semibold">这一步要做什么</h2>
         {canUpload ? (
           <div className="mt-4 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            {order.businessStatus === "supplier_modification" && latestRequest ? (
+            {isRevision && latestRequest ? (
               <div>
                 <p className="text-sm text-white/80">
-                  Latest customer notes against version {latestRequest.againstVersion}. Upload
-                  version {nextVersion} of {3}.
+                  客户针对第 {latestRequest.againstVersion} 版提交了 {latestRequest.notes.length} 条修改意见。
+                  请按意见修改后上传第 {nextVersion} 版（最多 {MAX_PORTRAIT_VERSIONS} 版）。
                 </p>
                 <div className="mt-4">
                   <NoteOverlay notes={latestRequest.notes} imageUrl={annotatedImage} />
                 </div>
-                <ol className="mt-4 grid gap-2 text-sm text-white/90">
-                  {latestRequest.notes.map((note, index) => (
-                    <li key={note.id} className="rounded-[8px] bg-white/10 px-3 py-2">
-                      <strong>#{note.index || index + 1}</strong> {note.text}
-                    </li>
-                  ))}
-                </ol>
+                <div className="mt-4">
+                  <NoteList notes={latestRequest.notes} dark />
+                </div>
               </div>
             ) : (
               <div>
                 <p className="text-sm text-white/80">
-                  Upload the finished portrait image and studio video for version {nextVersion}.
+                  参照客户原图和 AI 效果图完成画作，然后上传第 {nextVersion} 版的成品图和工作室视频。
                 </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {order.originalPhotoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={order.originalPhotoUrl}
-                      alt="Customer original"
-                      className="h-48 w-full rounded-[8px] object-cover"
-                    />
+                    <figure>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={order.originalPhotoUrl}
+                        alt="客户原图"
+                        className="h-48 w-full rounded-[8px] object-cover"
+                      />
+                      <figcaption className="mt-1 text-xs text-white/70">客户原图</figcaption>
+                    </figure>
                   ) : null}
                   {order.paintingUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={order.paintingUrl}
-                      alt="AI reference"
-                      className="h-48 w-full rounded-[8px] object-cover"
-                    />
+                    <figure>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={order.paintingUrl}
+                        alt="AI 效果图"
+                        className="h-48 w-full rounded-[8px] object-cover"
+                      />
+                      <figcaption className="mt-1 text-xs text-white/70">AI 效果图</figcaption>
+                    </figure>
                   ) : null}
                 </div>
               </div>
@@ -309,36 +337,59 @@ export default function OrderDetailPage() {
 
             <form onSubmit={onUpload} className="rounded-[10px] bg-white p-4 text-[#241c16]">
               <h3 className="text-lg font-semibold">
-                {order.businessStatus === "supplier_modification"
-                  ? `Upload revision (version ${nextVersion})`
-                  : `Upload finished artwork (version ${nextVersion})`}
+                {isRevision
+                  ? `上传修改后的图和视频（第 ${nextVersion} 版）`
+                  : `上传成品（第 ${nextVersion} 版）`}
               </h3>
+              <p className="mt-1 text-xs text-[#6c6054]">两样都上传后才能提交给客户审阅。</p>
               <label className="mt-4 block text-sm font-medium">
-                Portrait image
+                成品图（JPG / PNG / WebP）
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   className="mt-2 block w-full text-sm"
                   onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                  disabled={busy}
                   required
                 />
               </label>
               <label className="mt-4 block text-sm font-medium">
-                Studio video (optional but recommended)
+                工作室视频（MP4 / WebM / MOV）
                 <input
                   type="file"
                   accept="video/mp4,video/webm,video/quicktime"
                   className="mt-2 block w-full text-sm"
                   onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+                  disabled={busy}
+                  required
                 />
               </label>
-              {progress ? <p className="mt-3 text-sm text-[#6c6054]">{progress}</p> : null}
+              {progress ? (
+                <div className="mt-4" role="status" aria-live="polite">
+                  <div className="flex justify-between text-xs text-[#6c6054]">
+                    <span>{progress.label}</span>
+                    <span>{progress.percent}%</span>
+                  </div>
+                  <div
+                    className="mt-1 h-2 overflow-hidden rounded-full bg-[#efe8dd]"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progress.percent}
+                  >
+                    <div
+                      className="h-full rounded-full bg-[#31271f] transition-[width] duration-200"
+                      style={{ width: `${progress.percent}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
               <button
                 type="submit"
-                disabled={busy}
-                className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white"
+                disabled={busy || !imageFile || !videoFile}
+                className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white disabled:opacity-40"
               >
-                {busy ? "Uploading…" : "Submit to customer review"}
+                {busy ? "上传中…" : "提交给客户审阅"}
               </button>
             </form>
           </div>
@@ -347,11 +398,10 @@ export default function OrderDetailPage() {
         {canShip ? (
           <form onSubmit={onShip} className="mt-4 max-w-md rounded-[10px] bg-white p-4 text-[#241c16]">
             <p className="text-sm text-[#6c6054]">
-              Customer approved the portrait. Enter carrier details to fulfill the Shopify order and
-              mark it shipped.
+              客户已批准第 {order.versionCount} 版。填写物流商和单号后，Shopify 订单会标记为已发货，并由 Shopify 给客户发送发货邮件。
             </p>
             <label className="mt-4 block text-sm font-medium">
-              Carrier
+              物流商
               <input
                 className="mt-2 w-full rounded-[8px] border border-[#dccfbc] px-3 py-3"
                 value={trackingCompany}
@@ -361,7 +411,7 @@ export default function OrderDetailPage() {
               />
             </label>
             <label className="mt-4 block text-sm font-medium">
-              Tracking number
+              物流单号
               <input
                 className="mt-2 w-full rounded-[8px] border border-[#dccfbc] px-3 py-3"
                 value={trackingNumber}
@@ -372,51 +422,76 @@ export default function OrderDetailPage() {
             <button
               type="submit"
               disabled={busy}
-              className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white"
+              className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white disabled:opacity-40"
             >
-              {busy ? "Submitting…" : "Mark as shipped"}
+              {busy ? "提交中…" : "确认发货"}
             </button>
           </form>
         ) : null}
 
         {order.businessStatus === "portrait_review" ? (
           <p className="mt-3 text-sm text-white/85">
-            Version {order.versionCount} is with the customer. No supplier action until they approve
-            or request modifications.
+            已提交第 {order.versionCount} 版，等待客户确认。客户批准或提出修改前，这里没有需要你做的事。
           </p>
         ) : null}
 
         {order.businessStatus === "shipped" ? (
           <p className="mt-3 text-sm text-white/85">
-            Shipped via {order.trackingCompany || "carrier"} · {order.trackingNumber || "—"}
+            已发货：{order.trackingCompany || "物流商"} · {order.trackingNumber || "—"}
           </p>
         ) : null}
       </section>
 
       <section className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <article className="rounded-[12px] border border-[#dccfbc] bg-white p-5">
-          <h2 className="text-lg font-semibold">Order details</h2>
-          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+          <h2 className="text-lg font-semibold">订单信息</h2>
+          {order.lineItems.map((line, index) => {
+            const frame = attr(line, "frame");
+            const keywords = attr(line, "keywords");
+            return (
+              <div key={index} className="mt-4 border-t border-[#efe8dd] pt-4 first:border-t-0 first:pt-0">
+                <p className="text-sm font-semibold">
+                  {line.title}
+                  {line.variantTitle ? ` · ${line.variantTitle}` : ""} × {line.quantity ?? 1}
+                </p>
+                <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-[#6c6054]">风格</dt>
+                    <dd className="font-medium">
+                      {attr(line, "style") || order.paintingStyle || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[#6c6054]">尺寸</dt>
+                    <dd className="font-medium">{attr(line, "size") || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[#6c6054]">装裱方式</dt>
+                    <dd className="font-medium">
+                      {attr(line, "presentation") || attr(line, "finish_type") || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[#6c6054]">画框</dt>
+                    <dd className="font-medium">{frame || "无"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[#6c6054]">宠物数量</dt>
+                    <dd className="font-medium">{attr(line, "subjects") || "—"}</dd>
+                  </div>
+                  {keywords ? (
+                    <div className="sm:col-span-2">
+                      <dt className="text-[#6c6054]">关键词</dt>
+                      <dd className="font-medium">{keywords}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
+            );
+          })}
+          <dl className="mt-4 grid gap-3 border-t border-[#efe8dd] pt-4 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-[#6c6054]">Style</dt>
-              <dd className="font-medium">
-                {order.paintingStyle || attr(attrs, "style") || "—"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[#6c6054]">Size</dt>
-              <dd className="font-medium">{attr(attrs, "size") || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-[#6c6054]">Finish</dt>
-              <dd className="font-medium">{attr(attrs, "finish") || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-[#6c6054]">Pets</dt>
-              <dd className="font-medium">{attr(attrs, "pet_quantity") || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-[#6c6054]">Total</dt>
+              <dt className="text-[#6c6054]">订单金额</dt>
               <dd className="font-medium">
                 {order.total
                   ? `${order.total.currencyCode} ${order.total.amount}`
@@ -424,30 +499,30 @@ export default function OrderDetailPage() {
               </dd>
             </div>
             <div>
-              <dt className="text-[#6c6054]">Gift message</dt>
-              <dd className="font-medium">{order.giftMessage || "—"}</dd>
+              <dt className="text-[#6c6054]">礼品留言</dt>
+              <dd className="font-medium whitespace-pre-line">{order.giftMessage || "—"}</dd>
             </div>
           </dl>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             {order.originalPhotoUrl ? (
               <div>
-                <p className="mb-2 text-sm text-[#6c6054]">Customer original</p>
+                <p className="mb-2 text-sm text-[#6c6054]">客户原图</p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={order.originalPhotoUrl}
-                  alt="Original photo"
+                  alt="客户原图"
                   className="h-48 w-full rounded-[8px] object-cover"
                 />
               </div>
             ) : null}
             {order.paintingUrl ? (
               <div>
-                <p className="mb-2 text-sm text-[#6c6054]">AI reference</p>
+                <p className="mb-2 text-sm text-[#6c6054]">AI 效果图</p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={order.paintingUrl}
-                  alt="AI painting"
+                  alt="AI 效果图"
                   className="h-48 w-full rounded-[8px] object-cover"
                 />
               </div>
@@ -456,11 +531,11 @@ export default function OrderDetailPage() {
         </article>
 
         <article className="rounded-[12px] border border-[#dccfbc] bg-white p-5">
-          <h2 className="text-lg font-semibold">Shipping</h2>
+          <h2 className="text-lg font-semibold">收货信息</h2>
           {order.shippingAddress ? (
             <dl className="mt-4 grid gap-2 text-sm">
               <div>
-                <dt className="text-[#6c6054]">Name</dt>
+                <dt className="text-[#6c6054]">收货人</dt>
                 <dd className="font-medium">
                   {order.shippingAddress.name ||
                     [order.shippingAddress.firstName, order.shippingAddress.lastName]
@@ -469,11 +544,11 @@ export default function OrderDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-[#6c6054]">Phone</dt>
+                <dt className="text-[#6c6054]">电话</dt>
                 <dd className="font-medium">{order.shippingAddress.phone || "—"}</dd>
               </div>
               <div>
-                <dt className="text-[#6c6054]">Address</dt>
+                <dt className="text-[#6c6054]">地址</dt>
                 <dd className="font-medium whitespace-pre-line">
                   {[
                     order.shippingAddress.address1,
@@ -490,70 +565,84 @@ export default function OrderDetailPage() {
               </div>
             </dl>
           ) : (
-            <p className="mt-4 text-sm text-[#6c6054]">No shipping address on file.</p>
+            <p className="mt-4 text-sm text-[#6c6054]">没有收货地址。</p>
           )}
         </article>
       </section>
 
       <section className="mt-6 rounded-[12px] border border-[#dccfbc] bg-white p-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Version history</h2>
+          <h2 className="text-lg font-semibold">历史版本</h2>
           <button
             type="button"
-            className="text-sm font-medium text-[#31271f] underline"
+            className="min-h-11 text-sm font-medium text-[#31271f] underline"
             onClick={() => setHistoryOpen((v) => !v)}
           >
-            {historyOpen ? "Hide" : "Show"}
+            {historyOpen ? "收起" : "展开"}
           </button>
         </div>
-        {historyOpen ? (
+        {order.versions.length === 0 ? (
+          <p className="mt-3 text-sm text-[#6c6054]">还没有交过版本。</p>
+        ) : historyOpen ? (
           <ul className="mt-4 grid gap-3">
-            {order.versions.length === 0 ? (
-              <li className="text-sm text-[#6c6054]">No studio versions yet.</li>
-            ) : (
-              order.versions
-                .slice()
-                .reverse()
-                .map((version) => {
-                  const req = order.modificationRequests.find(
-                    (r) => r.againstVersion === version.versionNumber,
-                  );
-                  return (
-                    <li
-                      key={version.versionNumber}
-                      className="rounded-[8px] border border-[#e7dccc] p-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <strong>Version {version.versionNumber}</strong>
-                        <span className="text-xs text-[#6c6054]">
-                          {version.createdAt
-                            ? new Date(version.createdAt).toLocaleString()
-                            : ""}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-[#6c6054]">
-                        {req
-                          ? `${req.notes.length} modification notes after this version`
-                          : "No modification notes"}
-                      </p>
-                      {version.imageUrl ? (
+            {order.versions
+              .slice()
+              .reverse()
+              .map((version) => {
+                const req = order.modificationRequests.find(
+                  (r) => r.againstVersion === version.versionNumber,
+                );
+                return (
+                  <li
+                    key={version.versionNumber}
+                    className="rounded-[8px] border border-[#e7dccc] p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <strong>
+                        第 {version.versionNumber} 版 · {req ? `${req.notes.length} 条说明` : "无修改意见"}
+                      </strong>
+                      <span className="text-xs text-[#6c6054]">{formatTime(version.createdAt)}</span>
+                    </div>
+                    <div className="mt-3 grid gap-4 md:grid-cols-[minmax(0,320px)_1fr]">
+                      {req ? (
+                        <NoteOverlay notes={req.notes} imageUrl={version.imageUrl} />
+                      ) : version.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={version.imageUrl}
-                          alt={`Version ${version.versionNumber}`}
-                          className="mt-3 h-40 rounded-[8px] object-cover"
+                          alt={`第 ${version.versionNumber} 版`}
+                          className="w-full rounded-[8px] object-cover"
                         />
                       ) : null}
-                    </li>
-                  );
-                })
-            )}
+                      <div className="grid content-start gap-3">
+                        {req ? <NoteList notes={req.notes} /> : null}
+                        {version.videoUrl ? (
+                          <video
+                            src={version.videoUrl}
+                            controls
+                            preload="metadata"
+                            className="w-full rounded-[8px] bg-black"
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
           </ul>
         ) : (
-          <p className="mt-3 text-sm text-[#6c6054]">
-            {order.versions.length} version(s) · {order.modificationCount} modification
-            request(s). Expand to review earlier rounds.
-          </p>
+          <ul className="mt-3 grid gap-1 text-sm text-[#6c6054]">
+            {order.versions.map((version) => {
+              const req = order.modificationRequests.find(
+                (r) => r.againstVersion === version.versionNumber,
+              );
+              return (
+                <li key={version.versionNumber}>
+                  第 {version.versionNumber} 版 · {req ? `${req.notes.length} 条说明` : "无修改意见"}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
     </main>

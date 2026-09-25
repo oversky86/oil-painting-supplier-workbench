@@ -20,10 +20,10 @@ Default port: `3200`.
 - `ACCOUNT_HMAC_SECRET` or `SUPPLIER_HMAC_SECRET` (must match pet app)
 - `PET_APP_URL` (e.g. `https://pet-paiting-app.vercel.app`)
 - `SHOPIFY_SHOP` (e.g. `e-commerce-dev-v6yidmlw.myshopify.com`)
-- `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` (login lock table)
+- `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` (login lock table; login returns 503 without it)
 
 ## Tabs
 
-- **Needs action**: `order_placed`, `supplier_modification`, `prepare_shipment`
-- **Waiting on customer**: `portrait_review`
-- **Completed**: `shipped`
+- **待处理**: `order_placed`, `supplier_modification`, `prepare_shipment`
+- **等待客户**: `portrait_review`
+- **已完成**: `shipped`

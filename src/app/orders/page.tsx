@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import {
   primaryActionLabel,
   statusLabel,
+  statusSentence,
   type SupplierOrderListItem,
 } from "@/lib/types";
 
@@ -14,20 +15,24 @@ type Tab = "action" | "waiting" | "done";
 const tabs: Array<{ id: Tab; label: string; empty: string }> = [
   {
     id: "action",
-    label: "Needs action",
-    empty: "No orders need your attention right now.",
+    label: "待处理",
+    empty: "没有需要你处理的订单",
   },
   {
     id: "waiting",
-    label: "Waiting on customer",
-    empty: "No orders are waiting on customer review.",
+    label: "等待客户",
+    empty: "没有等待客户确认的订单",
   },
   {
     id: "done",
-    label: "Completed",
-    empty: "No shipped orders yet.",
+    label: "已完成",
+    empty: "还没有已发货的订单",
   },
 ];
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
 
 async function fetchTab(tab: Tab) {
   const res = await fetch(`/api/orders?tab=${tab}`, { credentials: "same-origin" });
@@ -69,14 +74,14 @@ function OrdersInner() {
         (["action", "waiting", "done"] as Tab[]).forEach((t, index) => {
           const { res, json } = results[index];
           if (!res.ok || !json.ok) {
-            throw new Error(json.error || `Failed to load ${t}`);
+            throw new Error(json.error || "订单加载失败");
           }
           nextCounts[t] = Array.isArray(json.orders) ? json.orders.length : 0;
           if (t === active) setOrders(json.orders || []);
         });
         setCounts(nextCounts);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Failed to load");
+        setError(cause instanceof Error ? cause.message : "订单加载失败");
       } finally {
         setLoading(false);
       }
@@ -105,11 +110,10 @@ function OrdersInner() {
             ViewBrush Studio
           </p>
           <h1 className="mt-1 text-3xl font-semibold text-[#241c16] md:text-4xl">
-            Supplier workbench
+            供应商工作台
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[#6c6054]">
-            Work the queue top-down. Needs-action orders stay separate from customer
-            waiting and shipped work.
+            从上往下处理待处理订单。等待客户和已完成的订单分开放，不会混在一起。
           </p>
         </div>
         <button
@@ -117,7 +121,7 @@ function OrdersInner() {
           onClick={() => void logout()}
           className="inline-flex min-h-11 items-center rounded-[8px] border border-[#dccfbc] bg-white px-4 text-sm font-medium text-[#31271f]"
         >
-          Sign out
+          退出登录
         </button>
       </header>
 
@@ -150,7 +154,7 @@ function OrdersInner() {
       ) : null}
 
       {loading ? (
-        <p className="mt-10 text-sm text-[#6c6054]">Loading orders…</p>
+        <p className="mt-10 text-sm text-[#6c6054]">正在加载订单…</p>
       ) : orders.length === 0 ? (
         <div className="mt-10 rounded-[12px] border border-dashed border-[#dccfbc] bg-white px-6 py-16 text-center">
           <p className="text-lg font-semibold text-[#241c16]">
@@ -174,14 +178,11 @@ function OrdersInner() {
                       {statusLabel(order.businessStatus)}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-[#6c6054]">
-                    {order.email || "No email"} · placed{" "}
-                    {new Date(order.placedAt).toLocaleString()}
-                    {order.modificationCount
-                      ? ` · ${order.modificationCount} modification request(s) · version ${order.versionCount}`
-                      : order.versionCount
-                        ? ` · version ${order.versionCount}`
-                        : ""}
+                  <p className="mt-2 text-sm font-medium text-[#31271f]">
+                    {statusSentence(order)}
+                  </p>
+                  <p className="mt-1 text-sm text-[#6c6054]">
+                    {order.email || "无邮箱"} · 下单于 {formatTime(order.placedAt)}
                   </p>
                 </div>
                 <span className="inline-flex min-h-11 items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white">
@@ -198,7 +199,7 @@ function OrdersInner() {
 
 export default function OrdersPage() {
   return (
-    <Suspense fallback={<p className="p-8 text-sm text-[#6c6054]">Loading…</p>}>
+    <Suspense fallback={<p className="p-8 text-sm text-[#6c6054]">加载中…</p>}>
       <OrdersInner />
     </Suspense>
   );

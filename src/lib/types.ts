@@ -12,10 +12,13 @@ export type SupplierOrderListItem = {
   businessStatus: BusinessStatus | string;
   versionCount: number;
   modificationCount: number;
+  latestNoteCount: number;
   placedAt: string;
   trackingCompany?: string | null;
   trackingNumber?: string | null;
 };
+
+export const MAX_PORTRAIT_VERSIONS = 3;
 
 export type ModificationNote = {
   id: string;
@@ -76,15 +79,15 @@ export type SupplierOrderDetail = {
 export function statusLabel(status: string): string {
   switch (status) {
     case "order_placed":
-      return "Needs first portrait";
+      return "待交首版";
     case "supplier_modification":
-      return "Customer requested changes";
+      return "客户要求修改";
     case "prepare_shipment":
-      return "Ready to ship";
+      return "待发货";
     case "portrait_review":
-      return "Waiting on customer";
+      return "等待客户确认";
     case "shipped":
-      return "Shipped";
+      return "已发货";
     default:
       return status;
   }
@@ -93,12 +96,30 @@ export function statusLabel(status: string): string {
 export function primaryActionLabel(status: string): string {
   switch (status) {
     case "order_placed":
-      return "Upload artwork";
+      return "上传成品";
     case "supplier_modification":
-      return "Upload revision";
+      return "按意见修改";
     case "prepare_shipment":
-      return "Enter tracking";
+      return "填写物流";
     default:
-      return "View";
+      return "查看";
+  }
+}
+
+/** One-line queue summary, e.g. 「客户提交了 3 条修改 · 第 2 版」. */
+export function statusSentence(order: SupplierOrderListItem): string {
+  switch (order.businessStatus) {
+    case "order_placed":
+      return "还没有交过成品";
+    case "supplier_modification":
+      return `客户提交了 ${order.latestNoteCount} 条修改 · 第 ${order.versionCount} 版`;
+    case "prepare_shipment":
+      return `客户已批准第 ${order.versionCount} 版，可以发货`;
+    case "portrait_review":
+      return `已提交第 ${order.versionCount} 版，等待客户确认`;
+    case "shipped":
+      return [order.trackingCompany, order.trackingNumber].filter(Boolean).join(" · ") || "已发货";
+    default:
+      return "";
   }
 }
