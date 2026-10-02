@@ -257,11 +257,13 @@ export default function OrderDetailPage() {
     );
   }
 
+  const blocked = Boolean(order.blockedReason);
   const canUpload =
-    order.businessStatus === "order_placed" ||
-    order.businessStatus === "supplier_modification";
-  const canShip = order.businessStatus === "prepare_shipment";
-  const nextVersion = (order.versionCount || 0) + 1;
+    !blocked &&
+    (order.businessStatus === "order_placed" ||
+      order.businessStatus === "supplier_modification");
+  const canShip = !blocked && order.businessStatus === "prepare_shipment";
+  const nextVersion = order.nextVersion ?? (order.versionCount || 0) + 1;
   const isRevision = order.businessStatus === "supplier_modification";
 
   return (
@@ -288,6 +290,11 @@ export default function OrderDetailPage() {
 
       <section className="mt-6 rounded-[12px] border border-[#31271f] bg-[#31271f] p-5 text-white md:p-6">
         <h2 className="text-xl font-semibold">这一步要做什么</h2>
+        {blocked ? (
+          <p className="mt-3 text-sm text-white/85">
+            这个订单已取消或已全额退款，不需要继续处理（{order.blockedReason}）。
+          </p>
+        ) : null}
         {canUpload ? (
           <div className="mt-4 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             {isRevision && latestRequest ? (
@@ -429,7 +436,7 @@ export default function OrderDetailPage() {
           </form>
         ) : null}
 
-        {order.businessStatus === "portrait_review" ? (
+        {!blocked && order.businessStatus === "portrait_review" ? (
           <p className="mt-3 text-sm text-white/85">
             已提交第 {order.versionCount} 版，等待客户确认。客户批准或提出修改前，这里没有需要你做的事。
           </p>

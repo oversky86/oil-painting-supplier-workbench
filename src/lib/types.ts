@@ -35,6 +35,8 @@ export type SupplierOrderDetail = {
   createdAt: string;
   financialStatus?: string | null;
   fulfillmentStatus?: string | null;
+  /** Set when the order is cancelled or refunded; no upload or ship actions apply. */
+  blockedReason?: string | null;
   total?: { amount: string; currencyCode: string } | null;
   shippingAddress?: {
     name?: string | null;
@@ -61,6 +63,8 @@ export type SupplierOrderDetail = {
   businessStatus: BusinessStatus | string;
   versionCount: number;
   modificationCount: number;
+  /** Version number the next upload becomes. */
+  nextVersion?: number;
   trackingCompany?: string | null;
   trackingNumber?: string | null;
   versions: Array<{
