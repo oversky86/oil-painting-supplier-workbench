@@ -18,8 +18,6 @@ export type SupplierOrderListItem = {
   trackingNumber?: string | null;
 };
 
-export const MAX_PORTRAIT_VERSIONS = 3;
-
 export type ModificationNote = {
   id: string;
   index?: number;

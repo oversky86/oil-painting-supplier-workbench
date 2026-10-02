@@ -13,7 +13,6 @@ import {
 } from "react";
 import { ErrorNotice } from "@/components/error-notice";
 import {
-  MAX_PORTRAIT_VERSIONS,
   statusLabel,
   type ModificationNote,
   type SupplierOrderDetail,
@@ -497,7 +496,7 @@ export default function OrderDetailPage() {
               <div>
                 <p className="text-sm text-white/80">
                   客户针对第 {latestRequest.againstVersion} 版提交了 {latestRequest.notes.length} 条修改意见。
-                  请按意见修改后上传第 {nextVersion} 版（最多 {MAX_PORTRAIT_VERSIONS} 版）。
+                  请按意见修改后上传第 {nextVersion} 版。
                 </p>
                 <div className="mt-4">
                   <SourceThumbs
