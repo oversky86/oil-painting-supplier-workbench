@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   MAX_PORTRAIT_VERSIONS,
   statusLabel,
@@ -63,6 +71,62 @@ function NoteOverlay({
   );
 }
 
+const IMAGE_ACCEPT =
+  "image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif";
+const VIDEO_ACCEPT =
+  "video/mp4,video/quicktime,video/webm,video/x-m4v,video/3gpp,.mp4,.mov,.m4v,.webm,.3gp";
+
+const IMAGE_TYPE_BY_MIME: Record<string, string> = {
+  "image/jpeg": "image/jpeg",
+  "image/jpg": "image/jpeg",
+  "image/pjpeg": "image/jpeg",
+  "image/png": "image/png",
+  "image/webp": "image/webp",
+  "image/gif": "image/gif",
+  "image/heic": "image/heic",
+  "image/heif": "image/heif",
+  "image/heic-sequence": "image/heic",
+  "image/heif-sequence": "image/heif",
+};
+const VIDEO_TYPE_BY_MIME: Record<string, string> = {
+  "video/mp4": "video/mp4",
+  "video/mpeg": "video/mp4",
+  "video/quicktime": "video/quicktime",
+  "video/mov": "video/quicktime",
+  "video/x-m4v": "video/x-m4v",
+  "video/m4v": "video/x-m4v",
+  "video/webm": "video/webm",
+  "video/3gpp": "video/3gpp",
+  "video/3gp": "video/3gpp",
+  "video/3gpp2": "video/3gpp",
+};
+const IMAGE_TYPE_BY_EXT: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  heic: "image/heic",
+  heif: "image/heif",
+};
+const VIDEO_TYPE_BY_EXT: Record<string, string> = {
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  m4v: "video/x-m4v",
+  webm: "video/webm",
+  "3gp": "video/3gpp",
+};
+
+/** Browsers often omit a MIME type for HEIC/MOV; fall back to the file extension. */
+function contentTypeForUpload(file: File, kind: "image" | "video"): string | null {
+  const raw = (file.type || "").toLowerCase().split(";")[0].trim();
+  const byMime = kind === "image" ? IMAGE_TYPE_BY_MIME : VIDEO_TYPE_BY_MIME;
+  if (raw && byMime[raw]) return byMime[raw];
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  const byExt = kind === "image" ? IMAGE_TYPE_BY_EXT : VIDEO_TYPE_BY_EXT;
+  return byExt[ext] || null;
+}
+
 function NoteList({ notes, dark }: { notes: ModificationNote[]; dark?: boolean }) {
   return (
     <ol className={`grid gap-2 text-sm ${dark ? "text-white/90" : "text-[#31271f]"}`}>
@@ -78,16 +142,117 @@ function NoteList({ notes, dark }: { notes: ModificationNote[]; dark?: boolean }
   );
 }
 
+function SourceThumb({
+  url,
+  label,
+  tone,
+  onOpen,
+}: {
+  url?: string | null;
+  label: string;
+  tone: "light" | "dark";
+  onOpen: (src: string, alt: string) => void;
+}) {
+  const frame = "h-28 w-28 overflow-hidden rounded-[8px]";
+  const caption = tone === "dark" ? "text-white/70" : "text-[#6c6054]";
+  return (
+    <figure className="min-w-0">
+      {url ? (
+        <button
+          type="button"
+          className={`${frame} block border ${tone === "dark" ? "border-white/25" : "border-[#dccfbc]"}`}
+          onClick={() => onOpen(url, label)}
+          aria-label={`查看${label}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={label} className="h-full w-full object-cover" />
+        </button>
+      ) : (
+        <div
+          className={`${frame} flex items-center justify-center border border-dashed px-2 text-center text-xs ${
+            tone === "dark"
+              ? "border-white/30 text-white/70"
+              : "border-[#dccfbc] bg-[#f7f0e6] text-[#6c6054]"
+          }`}
+        >
+          暂无图片
+        </div>
+      )}
+      <figcaption className={`mt-1 text-xs ${caption}`}>{label}</figcaption>
+    </figure>
+  );
+}
+
+function SourceThumbs({
+  originalUrl,
+  paintingUrl,
+  tone,
+  onOpen,
+}: {
+  originalUrl?: string | null;
+  paintingUrl?: string | null;
+  tone: "light" | "dark";
+  onOpen: (src: string, alt: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-4">
+      <SourceThumb url={originalUrl} label="用户上传的图片" tone={tone} onOpen={onOpen} />
+      <SourceThumb url={paintingUrl} label="AI 生成的图片" tone={tone} onOpen={onOpen} />
+    </div>
+  );
+}
+
+function FilePickButton({
+  label,
+  accept,
+  file,
+  disabled,
+  inputRef,
+  onFile,
+}: {
+  label: string;
+  accept: string;
+  file: File | null;
+  disabled: boolean;
+  inputRef: RefObject<HTMLInputElement | null>;
+  onFile: (file: File | null) => void;
+}) {
+  return (
+    <div className="mt-4">
+      <p className="text-sm font-medium">{label}</p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="sr-only"
+        tabIndex={-1}
+        disabled={disabled}
+        onChange={(event) => onFile(event.target.files?.[0] || null)}
+      />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+        className="mt-2 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] border border-[#31271f] px-4 text-sm font-semibold text-[#31271f] disabled:opacity-40"
+      >
+        选择文件
+      </button>
+      <p className="mt-2 truncate text-xs text-[#6c6054]">{file ? file.name : "未选择文件"}</p>
+    </div>
+  );
+}
+
 /** PUT to a Supabase signed upload URL with byte-level progress. */
 function uploadWithProgress(
   file: File,
   uploadUrl: string,
   onProgress: (loaded: number) => void,
+  contentType: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl);
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader("Content-Type", contentType || file.type || "application/octet-stream");
     xhr.setRequestHeader("x-upsert", "true");
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded);
@@ -121,6 +286,22 @@ export default function OrderDetailPage() {
   const [trackingCompany, setTrackingCompany] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const openPreview = useCallback((src: string, alt: string) => {
+    setPreview({ src, alt });
+  }, []);
+
+  useEffect(() => {
+    if (!preview) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setPreview(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [preview]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -191,6 +372,16 @@ export default function OrderDetailPage() {
       setError("成品图和工作室视频都要上传");
       return;
     }
+    const imageType = contentTypeForUpload(imageFile, "image");
+    const videoType = contentTypeForUpload(videoFile, "video");
+    if (!imageType || !videoType) {
+      setError(
+        !imageType
+          ? "成品图格式不支持。请使用 JPG、PNG、WebP、HEIC 或 GIF"
+          : "视频格式不支持。请使用 MP4、MOV、M4V、WebM 或 3GP",
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     const total = imageFile.size + videoFile.size;
@@ -199,15 +390,21 @@ export default function OrderDetailPage() {
     try {
       report("正在准备上传…", 0);
       const [imageSigned, videoSigned] = await Promise.all([
-        postAction({ action: "create_upload_url", kind: "image", contentType: imageFile.type }),
-        postAction({ action: "create_upload_url", kind: "video", contentType: videoFile.type }),
+        postAction({ action: "create_upload_url", kind: "image", contentType: imageType }),
+        postAction({ action: "create_upload_url", kind: "video", contentType: videoType }),
       ]);
 
-      await uploadWithProgress(imageFile, imageSigned.uploadUrl, (loaded) =>
-        report("正在上传成品图…", loaded),
+      await uploadWithProgress(
+        imageFile,
+        imageSigned.uploadUrl,
+        (loaded) => report("正在上传成品图…", loaded),
+        imageType,
       );
-      await uploadWithProgress(videoFile, videoSigned.uploadUrl, (loaded) =>
-        report("正在上传工作室视频…", imageFile.size + loaded),
+      await uploadWithProgress(
+        videoFile,
+        videoSigned.uploadUrl,
+        (loaded) => report("正在上传工作室视频…", imageFile.size + loaded),
+        videoType,
       );
 
       report("正在提交给客户审阅…", total);
@@ -218,6 +415,8 @@ export default function OrderDetailPage() {
       });
       setImageFile(null);
       setVideoFile(null);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      if (videoInputRef.current) videoInputRef.current.value = "";
       setProgress(null);
       await load();
     } catch (cause) {
@@ -304,6 +503,14 @@ export default function OrderDetailPage() {
                   请按意见修改后上传第 {nextVersion} 版（最多 {MAX_PORTRAIT_VERSIONS} 版）。
                 </p>
                 <div className="mt-4">
+                  <SourceThumbs
+                    originalUrl={order.originalPhotoUrl}
+                    paintingUrl={order.paintingUrl}
+                    tone="dark"
+                    onOpen={openPreview}
+                  />
+                </div>
+                <div className="mt-4">
                   <NoteOverlay notes={latestRequest.notes} imageUrl={annotatedImage} />
                 </div>
                 <div className="mt-4">
@@ -313,31 +520,15 @@ export default function OrderDetailPage() {
             ) : (
               <div>
                 <p className="text-sm text-white/80">
-                  参照客户原图和 AI 效果图完成画作，然后上传第 {nextVersion} 版的成品图和工作室视频。
+                  参照用户上传的图片和 AI 生成的图片完成画作，然后上传第 {nextVersion} 版的成品图和工作室视频。
                 </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {order.originalPhotoUrl ? (
-                    <figure>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={order.originalPhotoUrl}
-                        alt="客户原图"
-                        className="h-48 w-full rounded-[8px] object-cover"
-                      />
-                      <figcaption className="mt-1 text-xs text-white/70">客户原图</figcaption>
-                    </figure>
-                  ) : null}
-                  {order.paintingUrl ? (
-                    <figure>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={order.paintingUrl}
-                        alt="AI 效果图"
-                        className="h-48 w-full rounded-[8px] object-cover"
-                      />
-                      <figcaption className="mt-1 text-xs text-white/70">AI 效果图</figcaption>
-                    </figure>
-                  ) : null}
+                <div className="mt-4">
+                  <SourceThumbs
+                    originalUrl={order.originalPhotoUrl}
+                    paintingUrl={order.paintingUrl}
+                    tone="dark"
+                    onOpen={openPreview}
+                  />
                 </div>
               </div>
             )}
@@ -349,28 +540,22 @@ export default function OrderDetailPage() {
                   : `上传成品（第 ${nextVersion} 版）`}
               </h3>
               <p className="mt-1 text-xs text-[#6c6054]">两样都上传后才能提交给客户审阅。</p>
-              <label className="mt-4 block text-sm font-medium">
-                成品图（JPG / PNG / WebP）
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="mt-2 block w-full text-sm"
-                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                  disabled={busy}
-                  required
-                />
-              </label>
-              <label className="mt-4 block text-sm font-medium">
-                工作室视频（MP4 / WebM / MOV）
-                <input
-                  type="file"
-                  accept="video/mp4,video/webm,video/quicktime"
-                  className="mt-2 block w-full text-sm"
-                  onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
-                  disabled={busy}
-                  required
-                />
-              </label>
+              <FilePickButton
+                label="成品图（JPG / PNG / WebP / HEIC / GIF）"
+                accept={IMAGE_ACCEPT}
+                file={imageFile}
+                disabled={busy}
+                inputRef={imageInputRef}
+                onFile={setImageFile}
+              />
+              <FilePickButton
+                label="工作室视频（MP4 / MOV / M4V / WebM / 3GP）"
+                accept={VIDEO_ACCEPT}
+                file={videoFile}
+                disabled={busy}
+                inputRef={videoInputRef}
+                onFile={setVideoFile}
+              />
               {progress ? (
                 <div className="mt-4" role="status" aria-live="polite">
                   <div className="flex justify-between text-xs text-[#6c6054]">
@@ -511,29 +696,13 @@ export default function OrderDetailPage() {
             </div>
           </dl>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {order.originalPhotoUrl ? (
-              <div>
-                <p className="mb-2 text-sm text-[#6c6054]">客户原图</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={order.originalPhotoUrl}
-                  alt="客户原图"
-                  className="h-48 w-full rounded-[8px] object-cover"
-                />
-              </div>
-            ) : null}
-            {order.paintingUrl ? (
-              <div>
-                <p className="mb-2 text-sm text-[#6c6054]">AI 效果图</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={order.paintingUrl}
-                  alt="AI 效果图"
-                  className="h-48 w-full rounded-[8px] object-cover"
-                />
-              </div>
-            ) : null}
+          <div className="mt-6">
+            <SourceThumbs
+              originalUrl={order.originalPhotoUrl}
+              paintingUrl={order.paintingUrl}
+              tone="light"
+              onOpen={openPreview}
+            />
           </div>
         </article>
 
@@ -652,6 +821,35 @@ export default function OrderDetailPage() {
           </ul>
         )}
       </section>
+
+      {preview ? (
+        <div
+          className="fixed inset-0 z-50 flex flex-col bg-black/75"
+          role="dialog"
+          aria-modal="true"
+          aria-label={preview.alt}
+          onClick={() => setPreview(null)}
+        >
+          <div className="flex justify-end p-3">
+            <button
+              type="button"
+              className="inline-flex min-h-12 items-center justify-center rounded-[8px] bg-white px-4 text-sm font-semibold text-[#241c16]"
+              onClick={() => setPreview(null)}
+            >
+              关闭
+            </button>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center px-4 pb-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={preview.src}
+              alt={preview.alt}
+              className="max-h-full max-w-full object-contain"
+              onClick={(event) => event.stopPropagation()}
+            />
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
