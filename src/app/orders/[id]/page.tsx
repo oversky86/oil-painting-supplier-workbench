@@ -34,6 +34,15 @@ function formatTime(value?: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "";
 }
 
+/**
+ * `selection` is 0–100% of the box `point()` measures in account-web
+ * (`event.currentTarget.getBoundingClientRect()` on the inner canvas div).
+ * That div is filled by `object-cover`. On desktop it is the padded frame's
+ * content box — 640×658 minus `lg:px-[70px]` and `lg:py-4` → 500×626 — not
+ * the padded card and not the uncropped photo. `self-start` / `h-fit` keep
+ * this box from stretching with the history grid row. Mobile draws on
+ * `aspect-[163/173]` instead, so phone-only notes can still sit slightly off.
+ */
 function NoteOverlay({
   notes,
   imageUrl,
@@ -42,31 +51,37 @@ function NoteOverlay({
   imageUrl?: string | null;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-[#dccfbc] bg-[#efe8dd]">
-      {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={imageUrl} alt="带标注的画像" className="block w-full" />
-      ) : (
-        <div className="flex h-72 items-center justify-center text-sm text-[#6c6054]">
-          没有图片
-        </div>
-      )}
-      {notes.map((note, index) => (
-        <span
-          key={note.id}
-          className="pointer-events-none absolute border-2 border-[#d6534c] bg-[#d6534c]/15"
-          style={{
-            left: `${note.selection.x}%`,
-            top: `${note.selection.y}%`,
-            width: `${note.selection.width}%`,
-            height: `${note.selection.height}%`,
-          }}
-        >
-          <span className="absolute right-[-11px] top-1/2 flex h-[22px] w-[22px] -translate-y-1/2 items-center justify-center rounded-full bg-[#d6534c] text-[11px] font-bold text-white">
-            {note.index || index + 1}
+    <div className="h-fit w-full self-start overflow-hidden rounded-[10px] border border-[#dccfbc]">
+      <div className="relative aspect-[500/626] bg-[#efe8dd]">
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt="带标注的画像"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-[#6c6054]">
+            没有图片
+          </div>
+        )}
+        {notes.map((note, index) => (
+          <span
+            key={note.id}
+            className="pointer-events-none absolute border-2 border-[#d6534c] bg-[#d6534c]/15"
+            style={{
+              left: `${note.selection.x}%`,
+              top: `${note.selection.y}%`,
+              width: `${note.selection.width}%`,
+              height: `${note.selection.height}%`,
+            }}
+          >
+            <span className="absolute right-[-11px] top-1/2 flex h-[22px] w-[22px] -translate-y-1/2 items-center justify-center rounded-full bg-[#d6534c] text-[11px] font-bold text-white">
+              {note.index || index + 1}
+            </span>
           </span>
-        </span>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -775,7 +790,7 @@ export default function OrderDetailPage() {
                       </strong>
                       <span className="text-xs text-[#6c6054]">{formatTime(version.createdAt)}</span>
                     </div>
-                    <div className="mt-3 grid gap-4 md:grid-cols-[minmax(0,320px)_1fr]">
+                    <div className="mt-3 grid items-start gap-4 md:grid-cols-[minmax(0,320px)_1fr]">
                       {req ? (
                         <NoteOverlay notes={req.notes} imageUrl={version.imageUrl} />
                       ) : version.imageUrl ? (
