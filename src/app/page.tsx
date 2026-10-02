@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ErrorNotice } from "@/components/error-notice";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -72,11 +73,7 @@ export default function LoginPage() {
           />
         </label>
 
-        {error ? (
-          <p className="mt-4 rounded-[8px] border border-[#f0c2be] bg-[#fff5f4] px-3 py-2 text-sm text-[#a33b35]">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ErrorNotice message={error} /> : null}
 
         <button
           type="submit"

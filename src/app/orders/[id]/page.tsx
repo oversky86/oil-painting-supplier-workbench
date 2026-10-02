@@ -11,6 +11,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { ErrorNotice } from "@/components/error-notice";
 import {
   MAX_PORTRAIT_VERSIONS,
   statusLabel,
@@ -448,7 +449,7 @@ export default function OrderDetailPage() {
   if (!order) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-[#a33b35]">{error || "找不到这个订单"}</p>
+        <ErrorNotice message={error || "找不到这个订单"} />
         <Link href="/orders" className="mt-4 inline-block text-sm underline">
           返回订单列表
         </Link>
@@ -481,11 +482,7 @@ export default function OrderDetailPage() {
         {order.email || "无邮箱"} · 下单于 {formatTime(order.createdAt)}
       </p>
 
-      {error ? (
-        <p className="mt-4 rounded-[8px] border border-[#f0c2be] bg-[#fff5f4] px-4 py-3 text-sm text-[#a33b35]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNotice message={error} /> : null}
 
       <section className="mt-6 rounded-[12px] border border-[#31271f] bg-[#31271f] p-5 text-white md:p-6">
         <h2 className="text-xl font-semibold">这一步要做什么</h2>

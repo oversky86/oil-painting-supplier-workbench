@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { ErrorNotice } from "@/components/error-notice";
 import {
   primaryActionLabel,
   statusLabel,
@@ -147,11 +148,7 @@ function OrdersInner() {
         })}
       </nav>
 
-      {error ? (
-        <p className="mt-6 rounded-[8px] border border-[#f0c2be] bg-[#fff5f4] px-4 py-3 text-sm text-[#a33b35]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNotice message={error} /> : null}
 
       {loading ? (
         <p className="mt-10 text-sm text-[#6c6054]">正在加载订单…</p>
