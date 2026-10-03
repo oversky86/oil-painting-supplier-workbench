@@ -9,7 +9,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
+  type SyntheticEvent,
 } from "react";
 import { ErrorNotice } from "@/components/error-notice";
 import {
@@ -217,21 +219,159 @@ function SourceThumbs({
   );
 }
 
+type PreviewKind = "image" | "video";
+
+/** Object URL for a picked file. Revoked when the file is replaced or the picker unmounts. */
+function useObjectUrl(file: File | null, onRevoke?: (url: string) => void) {
+  const onRevokeRef = useRef(onRevoke);
+  onRevokeRef.current = onRevoke;
+  const [entry, setEntry] = useState<{ file: File | null; url: string | null }>({
+    file: null,
+    url: null,
+  });
+
+  useEffect(() => {
+    if (!file) {
+      setEntry((current) =>
+        current.file === null && current.url === null ? current : { file: null, url: null },
+      );
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setEntry({ file, url });
+    return () => {
+      URL.revokeObjectURL(url);
+      onRevokeRef.current?.(url);
+    };
+  }, [file]);
+
+  return entry.file === file ? entry.url : null;
+}
+
+function seekVideoFrame(el: HTMLVideoElement) {
+  const duration = el.duration;
+  if (!Number.isFinite(duration) || duration <= 0) return;
+  const target = Math.min(0.15, Math.max(duration / 10, 0.001));
+  if (el.currentTime >= target / 2) return;
+  try {
+    el.currentTime = target;
+  } catch {
+    /* Seek can throw before the file is seekable. */
+  }
+}
+
+function markVideoFailed(event: SyntheticEvent<HTMLVideoElement>) {
+  const code = event.currentTarget.error?.code;
+  return Boolean(code && code !== MediaError.MEDIA_ERR_ABORTED);
+}
+
+const previewFrame =
+  "relative block h-28 w-28 shrink-0 overflow-hidden rounded-[8px] border border-[#dccfbc] bg-[#efe8dd]";
+
+function PreviewFallback({ kind }: { kind: PreviewKind }) {
+  const video = kind === "video";
+  return (
+    <span
+      className={`flex h-full w-full flex-col items-center justify-center gap-1 px-2 text-center text-[11px] leading-tight ${
+        video ? "bg-[#31271f] text-white" : "bg-[#efe8dd] text-[#6c6054]"
+      }`}
+    >
+      {video ? (
+        <span aria-hidden="true" className="text-sm leading-none">
+          ▶
+        </span>
+      ) : null}
+      {video ? "已选择视频" : "已选择图片"}
+    </span>
+  );
+}
+
+function SelectedFileThumb({
+  kind,
+  url,
+  onOpen,
+}: {
+  kind: PreviewKind;
+  url: string;
+  onOpen: (src: string, alt: string, kind: PreviewKind) => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  const attachMuted = useCallback((node: HTMLVideoElement | null) => {
+    if (node) node.muted = true;
+  }, []);
+  const label = kind === "image" ? "成品图" : "工作室视频";
+
+  const media = failed ? (
+    <PreviewFallback kind={kind} />
+  ) : kind === "image" ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={label}
+      className="h-full w-full object-cover"
+      onError={() => setFailed(true)}
+    />
+  ) : (
+    <>
+      <video
+        src={url}
+        muted
+        playsInline
+        preload="auto"
+        className="pointer-events-none relative z-0 h-full w-full object-cover"
+        ref={attachMuted}
+        onLoadedMetadata={(event) => seekVideoFrame(event.currentTarget)}
+        onError={(event) => {
+          if (markVideoFailed(event)) setFailed(true);
+        }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-1.5 right-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs leading-none text-white"
+      >
+        ▶
+      </span>
+    </>
+  );
+
+  return (
+    <div className={previewFrame}>
+      {media}
+      {failed ? null : (
+        <button
+          type="button"
+          className="absolute inset-0 z-20 bg-transparent"
+          aria-label={`查看${label}`}
+          onClick={() => onOpen(url, label, kind)}
+        />
+      )}
+    </div>
+  );
+}
+
 function FilePickButton({
   label,
   accept,
   file,
+  kind,
   disabled,
   inputRef,
   onFile,
+  onOpen,
+  onRevoke,
 }: {
   label: string;
   accept: string;
   file: File | null;
+  kind: PreviewKind;
   disabled: boolean;
   inputRef: RefObject<HTMLInputElement | null>;
   onFile: (file: File | null) => void;
+  onOpen: (src: string, alt: string, kind: PreviewKind) => void;
+  onRevoke: (url: string) => void;
 }) {
+  const objectUrl = useObjectUrl(file, onRevoke);
+
   return (
     <div className="mt-4">
       <p className="text-sm font-medium">{label}</p>
@@ -252,6 +392,18 @@ function FilePickButton({
       >
         选择文件
       </button>
+      {file ? (
+        <figure className="mt-3 min-w-0">
+          {objectUrl ? (
+            <SelectedFileThumb key={objectUrl} kind={kind} url={objectUrl} onOpen={onOpen} />
+          ) : (
+            <div className={previewFrame} />
+          )}
+          <figcaption className="mt-1 text-xs text-[#6c6054]">
+            {kind === "image" ? "成品图" : "工作室视频"}
+          </figcaption>
+        </figure>
+      ) : null}
       <p className="mt-2 truncate text-xs text-[#6c6054]">{file ? file.name : "未选择文件"}</p>
     </div>
   );
@@ -285,6 +437,57 @@ function uploadWithProgress(
   });
 }
 
+function LightboxStage({
+  preview,
+}: {
+  preview: { src: string; alt: string; kind: PreviewKind };
+}) {
+  const [failed, setFailed] = useState(false);
+  const attachMuted = useCallback((node: HTMLVideoElement | null) => {
+    if (node) node.muted = true;
+  }, []);
+  let body: ReactNode;
+
+  if (failed) {
+    body = (
+      <p className="rounded-[8px] bg-white px-4 py-3 text-sm text-[#241c16]">
+        {preview.kind === "video" ? "无法预览此视频" : "无法预览此图片"}
+      </p>
+    );
+  } else if (preview.kind === "video") {
+    body = (
+      <video
+        src={preview.src}
+        controls
+        muted
+        playsInline
+        preload="metadata"
+        className="max-h-full max-w-full bg-black"
+        ref={attachMuted}
+        onError={(event) => {
+          if (markVideoFailed(event)) setFailed(true);
+        }}
+      />
+    );
+  } else {
+    body = (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={preview.src}
+        alt={preview.alt}
+        className="max-h-full max-w-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="contents" onClick={(event) => event.stopPropagation()}>
+      {body}
+    </div>
+  );
+}
+
 type UploadProgress = { label: string; percent: number } | null;
 
 export default function OrderDetailPage() {
@@ -301,12 +504,18 @@ export default function OrderDetailPage() {
   const [trackingCompany, setTrackingCompany] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null);
+  const [preview, setPreview] = useState<{ src: string; alt: string; kind: PreviewKind } | null>(
+    null,
+  );
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  const openPreview = useCallback((src: string, alt: string) => {
-    setPreview({ src, alt });
+  const openPreview = useCallback((src: string, alt: string, kind: PreviewKind = "image") => {
+    setPreview({ src, alt, kind });
+  }, []);
+
+  const closePreviewIfRevoked = useCallback((src: string) => {
+    setPreview((current) => (current?.src === src ? null : current));
   }, []);
 
   useEffect(() => {
@@ -555,17 +764,23 @@ export default function OrderDetailPage() {
                 label="成品图（JPG / PNG / WebP / HEIC / GIF）"
                 accept={IMAGE_ACCEPT}
                 file={imageFile}
+                kind="image"
                 disabled={busy}
                 inputRef={imageInputRef}
                 onFile={setImageFile}
+                onOpen={openPreview}
+                onRevoke={closePreviewIfRevoked}
               />
               <FilePickButton
                 label="工作室视频（MP4 / MOV / M4V / WebM / 3GP）"
                 accept={VIDEO_ACCEPT}
                 file={videoFile}
+                kind="video"
                 disabled={busy}
                 inputRef={videoInputRef}
                 onFile={setVideoFile}
+                onOpen={openPreview}
+                onRevoke={closePreviewIfRevoked}
               />
               {progress ? (
                 <div className="mt-4" role="status" aria-live="polite">
@@ -851,13 +1066,7 @@ export default function OrderDetailPage() {
             </button>
           </div>
           <div className="flex min-h-0 flex-1 items-center justify-center px-4 pb-6">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={preview.src}
-              alt={preview.alt}
-              className="max-h-full max-w-full object-contain"
-              onClick={(event) => event.stopPropagation()}
-            />
+            <LightboxStage key={`${preview.kind}:${preview.src}`} preview={preview} />
           </div>
         </div>
       ) : null}
