@@ -3,10 +3,11 @@ import { getEnv } from "./env";
 
 export async function postSupplierApi(
   payload: Record<string, unknown>,
+  shop: string,
 ): Promise<Response> {
-  const { petAppUrl, hmacSecret, shopDomain } = getEnv();
+  const { petAppUrl, hmacSecret } = getEnv();
   const body = {
-    shop: shopDomain,
+    shop,
     ...payload,
   };
   const rawBody = JSON.stringify(body);

@@ -53,6 +53,23 @@ function OrdersInner() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [shop, setShop] = useState("");
+  const [shops, setShops] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth", { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        setShop(typeof json.shop === "string" ? json.shop : "");
+        setShops(Array.isArray(json.shops) ? json.shops : []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(
     async (active: Tab) => {
@@ -117,13 +134,40 @@ function OrdersInner() {
             从上往下处理待处理订单。等待客户和已完成的订单分开放，不会混在一起。
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          className="inline-flex min-h-11 items-center rounded-[8px] border border-[#dccfbc] bg-white px-4 text-sm font-medium text-[#31271f]"
-        >
-          退出登录
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {shops.length > 1 ? (
+            <label className="flex min-h-11 items-center gap-2 text-sm text-[#31271f]">
+              <span>店铺</span>
+              <select
+                value={shop}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setShop(next);
+                  void fetch("/api/auth", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "switch-shop", shop: next }),
+                  }).then(() => load(tab));
+                }}
+                className="min-h-11 rounded-[8px] border border-[#dccfbc] bg-white px-3"
+              >
+                {shops.map((item) => (
+                  <option key={item} value={item}>
+                    {item === "6hcr01-9t.myshopify.com" ? "线上店" : "开发店"} {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void logout()}
+            className="inline-flex min-h-11 items-center rounded-[8px] border border-[#dccfbc] bg-white px-4 text-sm font-medium text-[#31271f]"
+          >
+            退出登录
+          </button>
+        </div>
       </header>
 
       <nav className="mt-8 flex flex-wrap gap-2 border-b border-[#e7dccc] pb-3">

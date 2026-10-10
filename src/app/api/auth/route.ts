@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { getEnv } from "@/lib/env";
+import { getEnv, shopChoices } from "@/lib/env";
 import {
   clearLoginFailures,
   getLoginLock,
   LoginProtectionUnavailable,
   recordLoginFailure,
 } from "@/lib/login-lock";
-import { createSession, destroySession, getSession } from "@/lib/session";
+import { createSession, destroySession, getSession, setSessionShop } from "@/lib/session";
 
 function clientIp(request: NextRequest) {
   return (
@@ -30,6 +30,8 @@ export async function GET() {
     ok: true,
     authenticated: Boolean(session),
     user: session?.user || null,
+    shop: session?.shop || shopChoices()[0] || null,
+    shops: shopChoices(),
   });
 }
 
@@ -37,8 +39,18 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as {
     username?: string;
     password?: string;
-    action?: "login" | "logout";
+    action?: "login" | "logout" | "switch-shop";
+    shop?: string;
   };
+
+  if (body.action === "switch-shop") {
+    try {
+      const session = await setSessionShop(body.shop || "");
+      return NextResponse.json({ ok: true, shop: session.shop, shops: shopChoices() });
+    } catch {
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    }
+  }
 
   if (body.action === "logout") {
     await destroySession();
