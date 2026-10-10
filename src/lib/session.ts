@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import { getEnv, shopChoices } from "./env";
+import { getEnv, shopsForUser } from "./env";
 
 const COOKIE = "vb_supplier_session";
 const TTL_HOURS = 12;
@@ -15,15 +15,15 @@ export type SupplierSession = {
   exp: number;
 };
 
-function allowedShop(shop?: string): string {
-  const shops = shopChoices();
+function allowedShop(user: string, shop?: string): string {
+  const shops = shopsForUser(user);
   const normalized = (shop || "").trim().toLowerCase();
   if (shops.includes(normalized)) return normalized;
-  return shops[0] || "e-commerce-dev-v6yidmlw.myshopify.com";
+  return shops[0];
 }
 
 export async function createSession(user: string, shop?: string): Promise<void> {
-  const token = await new SignJWT({ user, shop: allowedShop(shop) })
+  const token = await new SignJWT({ user, shop: allowedShop(user, shop) })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${TTL_HOURS}h`)
@@ -60,7 +60,7 @@ export async function getSession(): Promise<SupplierSession | null> {
     if (!user) return null;
     return {
       user,
-      shop: allowedShop(typeof payload.shop === "string" ? payload.shop : ""),
+      shop: allowedShop(user, typeof payload.shop === "string" ? payload.shop : ""),
       exp: Number(payload.exp || 0),
     };
   } catch {
@@ -71,7 +71,7 @@ export async function getSession(): Promise<SupplierSession | null> {
 export async function setSessionShop(shop: string): Promise<SupplierSession> {
   const current = await getSession();
   if (!current) throw new Error("unauthorized");
-  const next = allowedShop(shop);
+  const next = allowedShop(current.user, shop);
   await createSession(current.user, next);
   return { ...current, shop: next };
 }

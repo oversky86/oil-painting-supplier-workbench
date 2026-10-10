@@ -4,8 +4,9 @@ function required(name: string): string {
   return value.replace(/\/$/, "");
 }
 
-const DEV_SHOP = "e-commerce-dev-v6yidmlw.myshopify.com";
-const LIVE_SHOP = "6hcr01-9t.myshopify.com";
+export const DEV_SHOP = "e-commerce-dev-v6yidmlw.myshopify.com";
+export const LIVE_SHOP = "6hcr01-9t.myshopify.com";
+export const DEV_ADMIN_USER = "admin_dev";
 const RETIRED_SHOP = "w4yzmt-vv.myshopify.com";
 
 function normalizeShop(value: string): string {
@@ -15,6 +16,12 @@ function normalizeShop(value: string): string {
     .replace(/^https?:\/\//, "")
     .replace(/\/$/, "")
     .split("/")[0];
+}
+
+/** admin sees only the live store. admin_dev can switch between both stores. */
+export function shopsForUser(user: string): string[] {
+  if (user === DEV_ADMIN_USER) return [LIVE_SHOP, DEV_SHOP];
+  return [LIVE_SHOP];
 }
 
 export function shopChoices(): string[] {
@@ -36,6 +43,8 @@ export function getEnv() {
     sessionSecret: required("SESSION_SECRET"),
     adminPassword: required("SUPPLIER_ADMIN_PASSWORD"),
     adminUser: process.env.SUPPLIER_ADMIN_USER?.trim() || "admin",
+    devAdminUser: DEV_ADMIN_USER,
+    devAdminPassword: process.env.SUPPLIER_ADMIN_DEV_PASSWORD?.trim() || "",
     hmacSecret:
       process.env.SUPPLIER_HMAC_SECRET?.trim() ||
       required("ACCOUNT_HMAC_SECRET"),

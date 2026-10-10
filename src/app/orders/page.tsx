@@ -159,6 +159,8 @@ function OrdersInner() {
                 ))}
               </select>
             </label>
+          ) : shops.length === 1 ? (
+            <p className="inline-flex min-h-11 items-center text-sm text-[#31271f]">线上店</p>
           ) : null}
           <button
             type="button"

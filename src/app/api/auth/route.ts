@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { getEnv, shopChoices } from "@/lib/env";
+import { getEnv, shopsForUser } from "@/lib/env";
 import {
   clearLoginFailures,
   getLoginLock,
@@ -26,12 +26,13 @@ function safeEqual(a: string, b: string) {
 
 export async function GET() {
   const session = await getSession();
+  const shops = session ? shopsForUser(session.user) : [];
   return NextResponse.json({
     ok: true,
     authenticated: Boolean(session),
     user: session?.user || null,
-    shop: session?.shop || shopChoices()[0] || null,
-    shops: shopChoices(),
+    shop: session?.shop || null,
+    shops,
   });
 }
 
@@ -46,7 +47,11 @@ export async function POST(request: NextRequest) {
   if (body.action === "switch-shop") {
     try {
       const session = await setSessionShop(body.shop || "");
-      return NextResponse.json({ ok: true, shop: session.shop, shops: shopChoices() });
+      return NextResponse.json({
+        ok: true,
+        shop: session.shop,
+        shops: shopsForUser(session.user),
+      });
     } catch {
       return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
@@ -95,10 +100,17 @@ async function login(
   const env = getEnv();
   const username = (body.username || "").trim();
   const password = body.password || "";
-  const userOk = safeEqual(username, env.adminUser);
-  const passOk = safeEqual(password, env.adminPassword);
+  const accounts = [
+    { user: env.adminUser, password: env.adminPassword },
+    ...(env.devAdminUser !== env.adminUser && env.devAdminPassword
+      ? [{ user: env.devAdminUser, password: env.devAdminPassword }]
+      : []),
+  ];
+  const matched = accounts.find(
+    (account) => safeEqual(username, account.user) && safeEqual(password, account.password),
+  );
 
-  if (!userOk || !passOk) {
+  if (!matched) {
     const result = await recordLoginFailure(ip);
     return NextResponse.json(
       {
@@ -111,6 +123,6 @@ async function login(
   }
 
   await clearLoginFailures(ip);
-  await createSession(env.adminUser);
-  return NextResponse.json({ ok: true, user: env.adminUser });
+  await createSession(matched.user);
+  return NextResponse.json({ ok: true, user: matched.user });
 }

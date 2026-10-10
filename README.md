@@ -15,8 +15,9 @@ Default port: `3200`.
 ## Required env
 
 - `SESSION_SECRET`
-- `SUPPLIER_ADMIN_PASSWORD`
+- `SUPPLIER_ADMIN_PASSWORD` (`admin` sees only the live store)
 - `SUPPLIER_ADMIN_USER` (optional, default `admin`)
+- `SUPPLIER_ADMIN_DEV_PASSWORD` (`admin_dev` can switch between the live store and the dev store)
 - `ACCOUNT_HMAC_SECRET` or `SUPPLIER_HMAC_SECRET` (must match pet app)
 - `PET_APP_URL` (e.g. `https://pet-paiting-app.vercel.app`)
 - `SHOPIFY_SHOP` (e.g. `e-commerce-dev-v6yidmlw.myshopify.com`)
