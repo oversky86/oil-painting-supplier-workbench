@@ -16,6 +16,7 @@ export type SupplierOrderListItem = {
   placedAt: string;
   trackingCompany?: string | null;
   trackingNumber?: string | null;
+  paintingUrl?: string | null;
 };
 
 export type ModificationNote = {

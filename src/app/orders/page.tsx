@@ -55,6 +55,16 @@ function OrdersInner() {
   const [error, setError] = useState("");
   const [shop, setShop] = useState("");
   const [shops, setShops] = useState<string[]>([]);
+  const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null);
+
+  useEffect(() => {
+    if (!preview) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setPreview(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [preview]);
 
   useEffect(() => {
     let cancelled = false;
@@ -206,13 +216,36 @@ function OrdersInner() {
         </div>
       ) : (
         <ul className="mt-6 grid gap-3">
-          {orders.map((order) => (
-            <li key={order.id}>
-              <Link
-                href={`/orders/${encodeURIComponent(order.id)}`}
-                className="grid gap-4 rounded-[12px] border border-[#dccfbc] bg-white p-4 transition hover:border-[#31271f] md:grid-cols-[1fr_auto] md:items-center md:p-5"
+          {orders.map((order) => {
+            const paintingAlt = `${order.orderName} 的 AI 生成图`;
+            return (
+              <li
+                key={order.id}
+                className="grid gap-4 rounded-[12px] border border-[#dccfbc] bg-white p-4 md:grid-cols-[auto_1fr_auto] md:items-center md:p-5"
               >
-                <div>
+                {order.paintingUrl ? (
+                  <button
+                    type="button"
+                    className="h-24 w-24 overflow-hidden rounded-[8px] border border-[#dccfbc]"
+                    onClick={() => setPreview({ src: order.paintingUrl || "", alt: paintingAlt })}
+                    aria-label={`查看${paintingAlt}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={order.paintingUrl}
+                      alt={paintingAlt}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                ) : (
+                  <div className="flex h-24 w-24 items-center justify-center rounded-[8px] border border-dashed border-[#dccfbc] bg-[#f7f0e6] px-2 text-center text-xs text-[#6c6054]">
+                    暂无图片
+                  </div>
+                )}
+                <Link
+                  href={`/orders/${encodeURIComponent(order.id)}`}
+                  className="min-w-0 rounded-[8px] transition hover:text-[#241c16]"
+                >
                   <div className="flex flex-wrap items-center gap-3">
                     <strong className="text-lg text-[#241c16]">
                       {order.orderName}
@@ -227,15 +260,47 @@ function OrdersInner() {
                   <p className="mt-1 text-sm text-[#6c6054]">
                     {order.email || "无邮箱"} · 下单于 {formatTime(order.placedAt)}
                   </p>
-                </div>
-                <span className="inline-flex min-h-11 items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white">
+                </Link>
+                <Link
+                  href={`/orders/${encodeURIComponent(order.id)}`}
+                  className="inline-flex min-h-11 items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white"
+                >
                   {primaryActionLabel(order.businessStatus)}
-                </span>
-              </Link>
-            </li>
-          ))}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
+
+      {preview ? (
+        <div
+          className="fixed inset-0 z-50 flex flex-col bg-black/75"
+          role="dialog"
+          aria-modal="true"
+          aria-label={preview.alt}
+          onClick={() => setPreview(null)}
+        >
+          <div className="flex justify-end p-3">
+            <button
+              type="button"
+              className="inline-flex min-h-12 items-center justify-center rounded-[8px] bg-white px-4 text-sm font-semibold text-[#241c16]"
+              onClick={() => setPreview(null)}
+            >
+              关闭
+            </button>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center px-4 pb-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={preview.src}
+              alt={preview.alt}
+              className="max-h-full max-w-full object-contain"
+              onClick={(event) => event.stopPropagation()}
+            />
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
