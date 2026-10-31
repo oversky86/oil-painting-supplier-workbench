@@ -53,48 +53,63 @@ function OrderTrail({
   events: OrderStatusEvent[];
   onOpen: (src: string, alt: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const gap = events.some((event) => event.gap);
   return (
     <section className="mt-6 rounded-[12px] border border-[#dccfbc] bg-white p-5">
-      <h2 className="text-lg font-semibold">订单轨迹</h2>
-      {gap ? (
-        <p className="mt-3 text-sm text-[#6c6054]">更早的状态变更没有记录。</p>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">订单轨迹</h2>
+        <button
+          type="button"
+          className="min-h-11 text-sm font-medium text-[#31271f] underline"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          {open ? "收起" : "展开"}
+        </button>
+      </div>
+      {open ? (
+        <>
+          {gap ? (
+            <p className="mt-3 text-sm text-[#6c6054]">更早的状态变更没有记录。</p>
+          ) : null}
+          {events.length === 0 ? (
+            <p className="mt-3 text-sm text-[#6c6054]">还没有状态记录。</p>
+          ) : (
+            <ol className="mt-4 grid gap-4">
+              {events.map((event) => (
+                <li key={event.id} className="grid grid-cols-[16px_1fr] gap-3">
+                  <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-[#31271f]" />
+                  <div>
+                    <p className="text-sm font-semibold text-[#241c16]">
+                      {statusLabel(event.toStatus)}
+                      <span className="ml-2 font-normal text-[#6c6054]">{actorLabel(event.actor)}</span>
+                    </p>
+                    <p className="mt-1 text-xs text-[#6c6054]">{formatTime(event.occurredAt)}</p>
+                    {event.versionNumber ? (
+                      <p className="mt-1 text-sm text-[#31271f]">第 {event.versionNumber} 版</p>
+                    ) : null}
+                    {event.noteCount ? (
+                      <p className="mt-1 text-sm text-[#31271f]">{event.noteCount} 条修改意见</p>
+                    ) : null}
+                    <TrackingLink company={event.trackingCompany} number={event.trackingNumber} />
+                    {event.imageUrl ? (
+                      <button
+                        type="button"
+                        className="mt-2 h-16 w-16 overflow-hidden rounded-[8px] border border-[#dccfbc]"
+                        onClick={() => onOpen(event.imageUrl || "", `第 ${event.versionNumber || ""} 版`)}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={event.imageUrl} alt="" className="h-full w-full object-cover" />
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </>
       ) : null}
-      {events.length === 0 ? (
-        <p className="mt-3 text-sm text-[#6c6054]">还没有状态记录。</p>
-      ) : (
-        <ol className="mt-4 grid gap-4">
-          {events.map((event) => (
-            <li key={event.id} className="grid grid-cols-[16px_1fr] gap-3">
-              <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-[#31271f]" />
-              <div>
-                <p className="text-sm font-semibold text-[#241c16]">
-                  {statusLabel(event.toStatus)}
-                  <span className="ml-2 font-normal text-[#6c6054]">{actorLabel(event.actor)}</span>
-                </p>
-                <p className="mt-1 text-xs text-[#6c6054]">{formatTime(event.occurredAt)}</p>
-                {event.versionNumber ? (
-                  <p className="mt-1 text-sm text-[#31271f]">第 {event.versionNumber} 版</p>
-                ) : null}
-                {event.noteCount ? (
-                  <p className="mt-1 text-sm text-[#31271f]">{event.noteCount} 条修改意见</p>
-                ) : null}
-                <TrackingLink company={event.trackingCompany} number={event.trackingNumber} />
-                {event.imageUrl ? (
-                  <button
-                    type="button"
-                    className="mt-2 h-16 w-16 overflow-hidden rounded-[8px] border border-[#dccfbc]"
-                    onClick={() => onOpen(event.imageUrl || "", `第 ${event.versionNumber || ""} 版`)}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={event.imageUrl} alt="" className="h-full w-full object-cover" />
-                  </button>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
     </section>
   );
 }
