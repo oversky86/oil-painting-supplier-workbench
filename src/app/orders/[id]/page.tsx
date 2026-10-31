@@ -792,6 +792,7 @@ export default function OrderDetailPage() {
         company={order.trackingCompany}
         number={order.trackingNumber}
         url={order.trackingUrl}
+        prominent
       />
       <p className="mt-2 text-sm text-[#6c6054]">
         {order.email || "无邮箱"} · 下单于 {formatTime(order.createdAt)}
