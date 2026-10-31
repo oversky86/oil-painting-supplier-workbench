@@ -73,27 +73,28 @@ function parseGiftMessage(raw?: string | null): GiftNote | null {
 
 function GiftMessageBlock({ raw }: { raw?: string | null }) {
   const gift = parseGiftMessage(raw);
+  const rows: Array<[string, string]> = gift
+    ? [
+        ["标题", gift.title || "—"],
+        ["发送人", gift.sender || "—"],
+        ["收件人", gift.recipient || "—"],
+        ["留言", gift.message || "—"],
+      ]
+    : [];
   return (
     <aside className="flex h-full flex-col rounded-[10px] border border-[#e7dccc] bg-[#f7f0e6] p-4">
       <h3 className="text-sm font-semibold text-[#241c16]">礼品留言</h3>
-      {!gift ? (
+      {rows.length === 0 ? (
         <p className="mt-3 text-sm text-[#6c6054]">没有礼品留言</p>
       ) : (
-        <>
-          {gift.title ? (
-            <p className="mt-3 text-lg font-semibold leading-6 text-[#241c16]">{gift.title}</p>
-          ) : null}
-          {gift.sender || gift.recipient ? (
-            <p className="mt-2 text-sm text-[#31271f]">
-              {gift.sender ? <span>来自 {gift.sender}</span> : null}
-              {gift.sender && gift.recipient ? <span className="mx-2 text-[#a89880]">→</span> : null}
-              {gift.recipient ? <span>给 {gift.recipient}</span> : null}
-            </p>
-          ) : null}
-          {gift.message ? (
-            <p className="mt-3 whitespace-pre-line text-sm leading-6 text-[#241c16]">{gift.message}</p>
-          ) : null}
-        </>
+        <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          {rows.map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-[#6c6054]">{label}</dt>
+              <dd className="mt-1 whitespace-pre-line font-medium text-[#241c16]">{value}</dd>
+            </div>
+          ))}
+        </dl>
       )}
     </aside>
   );
