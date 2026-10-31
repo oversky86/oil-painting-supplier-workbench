@@ -33,6 +33,7 @@ export type SupplierOrderListItem = {
   statusEnteredAt?: string | null;
   trackingCompany?: string | null;
   trackingNumber?: string | null;
+  trackingUrl?: string | null;
   paintingUrl?: string | null;
 };
 
@@ -83,6 +84,7 @@ export type SupplierOrderDetail = {
   nextVersion?: number;
   trackingCompany?: string | null;
   trackingNumber?: string | null;
+  trackingUrl?: string | null;
   statusEnteredAt?: string | null;
   events?: OrderStatusEvent[];
   versions: Array<{
@@ -119,6 +121,13 @@ export function statusLabel(status: string): string {
   }
 }
 
+export const ACTION_GROUPS: Array<{ id: BusinessStatus; label: string }> = [
+  { id: "supplier_modification", label: "客户要求修改" },
+  { id: "prepare_shipment", label: "待发货" },
+  { id: "order_placed", label: "待交首版" },
+  { id: "shipped", label: "已发货" },
+];
+
 export function primaryActionLabel(status: string): string {
   switch (status) {
     case "order_placed":
@@ -147,11 +156,11 @@ export function statusSentence(order: SupplierOrderListItem): string {
     case "portrait_review":
       return `已提交第 ${order.versionCount} 版，等待客户确认`;
     case "shipped":
-      return [order.trackingCompany, order.trackingNumber].filter(Boolean).join(" · ") || "已发货";
+      return "已发货，等待确认送达";
     case "delivered":
       return "已送达，归档还没有完成";
     case "archived":
-      return [order.trackingCompany, order.trackingNumber].filter(Boolean).join(" · ") || "已归档";
+      return "已送达并已归档";
     default:
       return "";
   }

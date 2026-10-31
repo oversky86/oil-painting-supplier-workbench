@@ -5,7 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ErrorNotice } from "@/components/error-notice";
 import { StatusDwellBadge } from "@/components/status-dwell";
+import { TrackingLink } from "@/components/tracking-link";
 import {
+  ACTION_GROUPS,
   primaryActionLabel,
   statusLabel,
   statusSentence,
@@ -28,7 +30,7 @@ const tabs: Array<{ id: Tab; label: string; empty: string }> = [
   {
     id: "done",
     label: "已完成",
-    empty: "没有已发货、等待确认送达的订单",
+    empty: "没有已送达的订单",
   },
 ];
 
@@ -46,6 +48,7 @@ function OrdersInner() {
   const router = useRouter();
   const search = useSearchParams();
   const tab = (search.get("tab") as Tab) || "action";
+  const group = search.get("group") || "";
   const [orders, setOrders] = useState<SupplierOrderListItem[]>([]);
   const [counts, setCounts] = useState<Record<Tab, number>>({
     action: 0,
@@ -131,6 +134,74 @@ function OrdersInner() {
     router.replace("/");
   }
 
+  const visibleOrders =
+    tab === "action" && group
+      ? orders.filter((order) => order.businessStatus === group)
+      : orders;
+  const groupedOrders = ACTION_GROUPS.map((item) => ({
+    ...item,
+    orders: orders.filter((order) => order.businessStatus === item.id),
+  })).filter((item) => item.orders.length > 0);
+
+  function renderOrder(order: SupplierOrderListItem) {
+    const paintingAlt = `${order.orderName} 的 AI 生成图`;
+    return (
+      <li
+        key={order.id}
+        className="grid gap-4 rounded-[12px] border border-[#dccfbc] bg-white p-4 md:grid-cols-[auto_1fr_auto] md:items-center md:p-5"
+      >
+        {order.paintingUrl ? (
+          <button
+            type="button"
+            className="h-24 w-24 overflow-hidden rounded-[8px] border border-[#dccfbc]"
+            onClick={() => setPreview({ src: order.paintingUrl || "", alt: paintingAlt })}
+            aria-label={`查看${paintingAlt}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={order.paintingUrl}
+              alt={paintingAlt}
+              className="h-full w-full object-cover"
+            />
+          </button>
+        ) : (
+          <div className="flex h-24 w-24 items-center justify-center rounded-[8px] border border-dashed border-[#dccfbc] bg-[#f7f0e6] px-2 text-center text-xs text-[#6c6054]">
+            暂无图片
+          </div>
+        )}
+        <div className="min-w-0">
+          <Link
+            href={`/orders/${encodeURIComponent(order.id)}`}
+            className="block rounded-[8px] transition hover:text-[#241c16]"
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <strong className="text-lg text-[#241c16]">{order.orderName}</strong>
+              <span className="rounded-full border border-[#dccfbc] bg-[#f7f0e6] px-3 py-1 text-xs font-semibold text-[#5f564b]">
+                {statusLabel(order.businessStatus)}
+              </span>
+              <StatusDwellBadge status={order.businessStatus} enteredAt={order.statusEnteredAt} />
+            </div>
+            <p className="mt-2 text-sm font-medium text-[#31271f]">{statusSentence(order)}</p>
+            <p className="mt-1 text-sm text-[#6c6054]">
+              {order.email || "无邮箱"} · 下单于 {formatTime(order.placedAt)}
+            </p>
+          </Link>
+          <TrackingLink
+            company={order.trackingCompany}
+            number={order.trackingNumber}
+            url={order.trackingUrl}
+          />
+        </div>
+        <Link
+          href={`/orders/${encodeURIComponent(order.id)}`}
+          className="inline-flex min-h-11 items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white"
+        >
+          {primaryActionLabel(order.businessStatus)}
+        </Link>
+      </li>
+    );
+  }
+
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -142,7 +213,7 @@ function OrdersInner() {
             供应商工作台
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[#6c6054]">
-            从上往下处理待处理订单。等待客户和已完成的订单分开放，不会混在一起。
+            待处理按状态分开。已发货但还没标记送达的订单留在待处理，标记已送达后才进入已完成。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -207,72 +278,62 @@ function OrdersInner() {
 
       {error ? <ErrorNotice message={error} /> : null}
 
-      {loading ? (
-        <p className="mt-10 text-sm text-[#6c6054]">正在加载订单…</p>
-      ) : orders.length === 0 ? (
-        <div className="mt-10 rounded-[12px] border border-dashed border-[#dccfbc] bg-white px-6 py-16 text-center">
-          <p className="text-lg font-semibold text-[#241c16]">
-            {tabs.find((t) => t.id === tab)?.empty}
-          </p>
-        </div>
-      ) : (
-        <ul className="mt-6 grid gap-3">
-          {orders.map((order) => {
-            const paintingAlt = `${order.orderName} 的 AI 生成图`;
+      {tab === "action" && !loading ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/orders?tab=action"
+            className={`inline-flex min-h-11 items-center rounded-full px-3 text-sm ${
+              group ? "border border-[#dccfbc] bg-white text-[#31271f]" : "bg-[#241c16] text-white"
+            }`}
+          >
+            全部
+            <span className="ml-2 text-xs">{orders.length}</span>
+          </Link>
+          {ACTION_GROUPS.map((item) => {
+            const count = orders.filter((order) => order.businessStatus === item.id).length;
+            const active = group === item.id;
             return (
-              <li
-                key={order.id}
-                className="grid gap-4 rounded-[12px] border border-[#dccfbc] bg-white p-4 md:grid-cols-[auto_1fr_auto] md:items-center md:p-5"
+              <Link
+                key={item.id}
+                href={`/orders?tab=action&group=${item.id}`}
+                className={`inline-flex min-h-11 items-center rounded-full px-3 text-sm ${
+                  active
+                    ? "bg-[#241c16] text-white"
+                    : "border border-[#dccfbc] bg-white text-[#31271f]"
+                }`}
               >
-                {order.paintingUrl ? (
-                  <button
-                    type="button"
-                    className="h-24 w-24 overflow-hidden rounded-[8px] border border-[#dccfbc]"
-                    onClick={() => setPreview({ src: order.paintingUrl || "", alt: paintingAlt })}
-                    aria-label={`查看${paintingAlt}`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={order.paintingUrl}
-                      alt={paintingAlt}
-                      className="h-full w-full object-cover"
-                    />
-                  </button>
-                ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-[8px] border border-dashed border-[#dccfbc] bg-[#f7f0e6] px-2 text-center text-xs text-[#6c6054]">
-                    暂无图片
-                  </div>
-                )}
-                <Link
-                  href={`/orders/${encodeURIComponent(order.id)}`}
-                  className="min-w-0 rounded-[8px] transition hover:text-[#241c16]"
-                >
-                  <div className="flex flex-wrap items-center gap-3">
-                    <strong className="text-lg text-[#241c16]">
-                      {order.orderName}
-                    </strong>
-                    <span className="rounded-full border border-[#dccfbc] bg-[#f7f0e6] px-3 py-1 text-xs font-semibold text-[#5f564b]">
-                      {statusLabel(order.businessStatus)}
-                    </span>
-                    <StatusDwellBadge status={order.businessStatus} enteredAt={order.statusEnteredAt} />
-                  </div>
-                  <p className="mt-2 text-sm font-medium text-[#31271f]">
-                    {statusSentence(order)}
-                  </p>
-                  <p className="mt-1 text-sm text-[#6c6054]">
-                    {order.email || "无邮箱"} · 下单于 {formatTime(order.placedAt)}
-                  </p>
-                </Link>
-                <Link
-                  href={`/orders/${encodeURIComponent(order.id)}`}
-                  className="inline-flex min-h-11 items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white"
-                >
-                  {primaryActionLabel(order.businessStatus)}
-                </Link>
-              </li>
+                {item.label}
+                <span className="ml-2 text-xs">{count}</span>
+              </Link>
             );
           })}
-        </ul>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <p className="mt-10 text-sm text-[#6c6054]">正在加载订单…</p>
+      ) : visibleOrders.length === 0 ? (
+        <div className="mt-10 rounded-[12px] border border-dashed border-[#dccfbc] bg-white px-6 py-16 text-center">
+          <p className="text-lg font-semibold text-[#241c16]">
+            {group
+              ? "这个状态下没有订单"
+              : tabs.find((t) => t.id === tab)?.empty}
+          </p>
+        </div>
+      ) : tab === "action" && !group ? (
+        <div className="mt-6 grid gap-8">
+          {groupedOrders.map((section) => (
+            <section key={section.id}>
+              <h2 className="text-sm font-semibold text-[#806e5a]">
+                {section.label}
+                <span className="ml-2">{section.orders.length}</span>
+              </h2>
+              <ul className="mt-3 grid gap-3">{section.orders.map(renderOrder)}</ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <ul className="mt-6 grid gap-3">{visibleOrders.map(renderOrder)}</ul>
       )}
 
       {preview ? (

@@ -15,6 +15,7 @@ import {
 } from "react";
 import { ErrorNotice } from "@/components/error-notice";
 import { StatusDwellBadge } from "@/components/status-dwell";
+import { TrackingLink } from "@/components/tracking-link";
 import { statusDwell } from "@/lib/status-dwell";
 import {
   statusLabel,
@@ -78,11 +79,7 @@ function OrderTrail({
                 {event.noteCount ? (
                   <p className="mt-1 text-sm text-[#31271f]">{event.noteCount} 条修改意见</p>
                 ) : null}
-                {event.trackingCompany || event.trackingNumber ? (
-                  <p className="mt-1 text-sm text-[#31271f]">
-                    {[event.trackingCompany, event.trackingNumber].filter(Boolean).join(" · ")}
-                  </p>
-                ) : null}
+                <TrackingLink company={event.trackingCompany} number={event.trackingNumber} />
                 {event.imageUrl ? (
                   <button
                     type="button"
@@ -771,10 +768,16 @@ export default function OrderDetailPage() {
     (order.businessStatus === "shipped" || order.businessStatus === "delivered");
   const nextVersion = order.nextVersion ?? (order.versionCount || 0) + 1;
   const isRevision = order.businessStatus === "supplier_modification";
+  const backTab =
+    order.businessStatus === "portrait_review"
+      ? "waiting"
+      : order.businessStatus === "delivered" || order.businessStatus === "archived"
+        ? "done"
+        : "action";
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-8">
-      <Link href="/orders?tab=action" className="text-sm text-[#6c6054] hover:text-[#241c16]">
+      <Link href={`/orders?tab=${backTab}`} className="text-sm text-[#6c6054] hover:text-[#241c16]">
         ← 返回订单列表
       </Link>
 
@@ -785,6 +788,11 @@ export default function OrderDetailPage() {
         </span>
         <StatusDwellBadge status={order.businessStatus} enteredAt={order.statusEnteredAt} />
       </header>
+      <TrackingLink
+        company={order.trackingCompany}
+        number={order.trackingNumber}
+        url={order.trackingUrl}
+      />
       <p className="mt-2 text-sm text-[#6c6054]">
         {order.email || "无邮箱"} · 下单于 {formatTime(order.createdAt)}
       </p>
@@ -947,7 +955,7 @@ export default function OrderDetailPage() {
         {canDeliver ? (
           <form onSubmit={onDeliver} className="mt-4 max-w-md rounded-[10px] bg-white p-4 text-[#241c16]">
             <p className="text-sm text-[#6c6054]">
-              已发货：{order.trackingCompany || "物流商"} · {order.trackingNumber || "—"}。确认客户已收到后，订单会先标为已送达，然后归档。
+              确认客户已收到后，订单会先标为已送达，然后归档。
             </p>
             <button
               type="submit"
@@ -960,9 +968,7 @@ export default function OrderDetailPage() {
         ) : null}
 
         {order.businessStatus === "archived" ? (
-          <p className="mt-3 text-sm text-white/85">
-            已送达并已归档：{order.trackingCompany || "物流商"} · {order.trackingNumber || "—"}
-          </p>
+          <p className="mt-3 text-sm text-white/85">已送达并已归档。</p>
         ) : null}
       </section>
 
