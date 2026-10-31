@@ -100,13 +100,8 @@ function OrderTrail({
 }
 
 /**
- * `selection` is 0–100% of the box `point()` measures in account-web
- * (`event.currentTarget.getBoundingClientRect()` on the inner canvas div).
- * That div is filled by `object-cover`. On desktop it is the padded frame's
- * content box — 640×658 minus `lg:px-[70px]` and `lg:py-4` → 500×626 — not
- * the padded card and not the uncropped photo. `self-start` / `h-fit` keep
- * this box from stretching with the history grid row. Mobile draws on
- * `aspect-[163/173]` instead, so phone-only notes can still sit slightly off.
+ * `selection` is 0–100% of the full portrait. The customer canvas uses the
+ * image's own aspect ratio, so this preview must show that whole image.
  */
 function NoteOverlay({
   notes,
@@ -116,24 +111,20 @@ function NoteOverlay({
   imageUrl?: string | null;
 }) {
   return (
-    <div className="h-fit w-full self-start overflow-hidden rounded-[10px] border border-[#dccfbc]">
-      <div className="relative aspect-[500/626] bg-[#efe8dd]">
-        {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt="带标注的画像"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-[#6c6054]">
-            没有图片
-          </div>
-        )}
+    <div className="relative h-fit w-full self-start overflow-hidden rounded-[10px] border border-[#dccfbc] bg-[#efe8dd]">
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt="带标注的画像" className="block h-auto w-full" />
+      ) : (
+        <div className="flex aspect-[3/4] items-center justify-center text-sm text-[#6c6054]">
+          没有图片
+        </div>
+      )}
+      <div className="pointer-events-none absolute inset-0">
         {notes.map((note, index) => (
           <span
             key={note.id}
-            className="pointer-events-none absolute border-2 border-[#d6534c] bg-[#d6534c]/15"
+            className="absolute border-2 border-[#d6534c] bg-[#d6534c]/15"
             style={{
               left: `${note.selection.x}%`,
               top: `${note.selection.y}%`,
