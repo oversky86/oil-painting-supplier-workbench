@@ -138,10 +138,6 @@ function OrdersInner() {
     tab === "action" && group
       ? orders.filter((order) => order.businessStatus === group)
       : orders;
-  const groupedOrders = ACTION_GROUPS.map((item) => ({
-    ...item,
-    orders: orders.filter((order) => order.businessStatus === item.id),
-  })).filter((item) => item.orders.length > 0);
 
   function renderOrder(order: SupplierOrderListItem) {
     const paintingAlt = `${order.orderName} 的 AI 生成图`;
@@ -319,18 +315,6 @@ function OrdersInner() {
               ? "这个状态下没有订单"
               : tabs.find((t) => t.id === tab)?.empty}
           </p>
-        </div>
-      ) : tab === "action" && !group ? (
-        <div className="mt-6 grid gap-8">
-          {groupedOrders.map((section) => (
-            <section key={section.id}>
-              <h2 className="text-sm font-semibold text-[#806e5a]">
-                {section.label}
-                <span className="ml-2">{section.orders.length}</span>
-              </h2>
-              <ul className="mt-3 grid gap-3">{section.orders.map(renderOrder)}</ul>
-            </section>
-          ))}
         </div>
       ) : (
         <ul className="mt-6 grid gap-3">{visibleOrders.map(renderOrder)}</ul>
