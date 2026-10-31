@@ -40,6 +40,59 @@ function formatTime(value?: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "";
 }
 
+type GiftNote = {
+  title: string;
+  sender: string;
+  recipient: string;
+  message: string;
+};
+
+function parseGiftMessage(raw?: string | null): GiftNote | null {
+  const text = raw?.trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { title: "", sender: "", recipient: "", message: text };
+    }
+    const field = (key: string) => (typeof parsed[key] === "string" ? parsed[key].trim() : "");
+    const gift = {
+      title: field("title"),
+      sender: field("sender"),
+      recipient: field("recipient"),
+      message: field("message"),
+    };
+    if (!gift.title && !gift.sender && !gift.recipient && !gift.message) {
+      return { title: "", sender: "", recipient: "", message: text };
+    }
+    return gift;
+  } catch {
+    return { title: "", sender: "", recipient: "", message: text };
+  }
+}
+
+function GiftMessageBlock({ raw }: { raw?: string | null }) {
+  const gift = parseGiftMessage(raw);
+  if (!gift) return <span>—</span>;
+  const rows = [
+    ["标题", gift.title],
+    ["发送人", gift.sender],
+    ["收件人", gift.recipient],
+    ["留言", gift.message],
+  ].filter(([, value]) => value);
+  if (!rows.length) return <span>—</span>;
+  return (
+    <dl className="mt-1 grid gap-2">
+      {rows.map(([label, value]) => (
+        <div key={label}>
+          <dt className="text-xs text-[#6c6054]">{label}</dt>
+          <dd className="whitespace-pre-line font-medium">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function actorLabel(actor: OrderStatusEvent["actor"]) {
   if (actor === "customer") return "客户";
   if (actor === "supplier") return "供应商";
@@ -1035,9 +1088,11 @@ export default function OrderDetailPage() {
                   : "—"}
               </dd>
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <dt className="text-[#6c6054]">礼品留言</dt>
-              <dd className="font-medium whitespace-pre-line">{order.giftMessage || "—"}</dd>
+              <dd>
+                <GiftMessageBlock raw={order.giftMessage} />
+              </dd>
             </div>
           </dl>
 
