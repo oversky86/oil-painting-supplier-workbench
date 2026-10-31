@@ -76,5 +76,17 @@ export async function POST(
     return NextResponse.json(json, { status: res.status });
   }
 
+  if (action === "deliver") {
+    const res = await postSupplierApi(
+      {
+        action: "deliver",
+        orderId: decodeURIComponent(id),
+      },
+      session.shop,
+    );
+    const json = await res.json().catch(() => ({ ok: false }));
+    return NextResponse.json(json, { status: res.status });
+  }
+
   return NextResponse.json({ ok: false, error: "Unknown action" }, { status: 400 });
 }

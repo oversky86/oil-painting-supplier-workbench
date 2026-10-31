@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ErrorNotice } from "@/components/error-notice";
+import { StatusDwellBadge } from "@/components/status-dwell";
 import {
   primaryActionLabel,
   statusLabel,
@@ -27,7 +28,7 @@ const tabs: Array<{ id: Tab; label: string; empty: string }> = [
   {
     id: "done",
     label: "已完成",
-    empty: "还没有已发货的订单",
+    empty: "没有已发货、等待确认送达的订单",
   },
 ];
 
@@ -253,6 +254,7 @@ function OrdersInner() {
                     <span className="rounded-full border border-[#dccfbc] bg-[#f7f0e6] px-3 py-1 text-xs font-semibold text-[#5f564b]">
                       {statusLabel(order.businessStatus)}
                     </span>
+                    <StatusDwellBadge status={order.businessStatus} enteredAt={order.statusEnteredAt} />
                   </div>
                   <p className="mt-2 text-sm font-medium text-[#31271f]">
                     {statusSentence(order)}

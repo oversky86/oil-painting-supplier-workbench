@@ -1,9 +1,25 @@
+export type OrderStatusEvent = {
+  id: string;
+  fromStatus: string | null;
+  toStatus: string;
+  actor: "customer" | "supplier" | "system";
+  occurredAt: string;
+  versionNumber?: number | null;
+  noteCount?: number | null;
+  trackingCompany?: string | null;
+  trackingNumber?: string | null;
+  imageUrl?: string | null;
+  gap?: boolean;
+};
+
 export type BusinessStatus =
   | "order_placed"
   | "portrait_review"
   | "supplier_modification"
   | "prepare_shipment"
-  | "shipped";
+  | "shipped"
+  | "delivered"
+  | "archived";
 
 export type SupplierOrderListItem = {
   id: string;
@@ -14,6 +30,7 @@ export type SupplierOrderListItem = {
   modificationCount: number;
   latestNoteCount: number;
   placedAt: string;
+  statusEnteredAt?: string | null;
   trackingCompany?: string | null;
   trackingNumber?: string | null;
   paintingUrl?: string | null;
@@ -66,6 +83,8 @@ export type SupplierOrderDetail = {
   nextVersion?: number;
   trackingCompany?: string | null;
   trackingNumber?: string | null;
+  statusEnteredAt?: string | null;
+  events?: OrderStatusEvent[];
   versions: Array<{
     versionNumber: number;
     imageUrl?: string | null;
@@ -91,6 +110,10 @@ export function statusLabel(status: string): string {
       return "等待客户确认";
     case "shipped":
       return "已发货";
+    case "delivered":
+      return "已送达";
+    case "archived":
+      return "已归档";
     default:
       return status;
   }
@@ -104,6 +127,9 @@ export function primaryActionLabel(status: string): string {
       return "按意见修改";
     case "prepare_shipment":
       return "填写物流";
+    case "shipped":
+    case "delivered":
+      return "已送达";
     default:
       return "查看";
   }
@@ -122,6 +148,10 @@ export function statusSentence(order: SupplierOrderListItem): string {
       return `已提交第 ${order.versionCount} 版，等待客户确认`;
     case "shipped":
       return [order.trackingCompany, order.trackingNumber].filter(Boolean).join(" · ") || "已发货";
+    case "delivered":
+      return "已送达，归档还没有完成";
+    case "archived":
+      return [order.trackingCompany, order.trackingNumber].filter(Boolean).join(" · ") || "已归档";
     default:
       return "";
   }

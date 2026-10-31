@@ -14,9 +14,12 @@ import {
   type SyntheticEvent,
 } from "react";
 import { ErrorNotice } from "@/components/error-notice";
+import { StatusDwellBadge } from "@/components/status-dwell";
+import { statusDwell } from "@/lib/status-dwell";
 import {
   statusLabel,
   type ModificationNote,
+  type OrderStatusEvent,
   type SupplierOrderDetail,
 } from "@/lib/types";
 
@@ -34,6 +37,69 @@ function attr(line: LineItem | undefined, key: string) {
 
 function formatTime(value?: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "";
+}
+
+function actorLabel(actor: OrderStatusEvent["actor"]) {
+  if (actor === "customer") return "客户";
+  if (actor === "supplier") return "供应商";
+  return "系统";
+}
+
+function OrderTrail({
+  events,
+  onOpen,
+}: {
+  events: OrderStatusEvent[];
+  onOpen: (src: string, alt: string) => void;
+}) {
+  const gap = events.some((event) => event.gap);
+  return (
+    <section className="mt-6 rounded-[12px] border border-[#dccfbc] bg-white p-5">
+      <h2 className="text-lg font-semibold">订单轨迹</h2>
+      {gap ? (
+        <p className="mt-3 text-sm text-[#6c6054]">更早的状态变更没有记录。</p>
+      ) : null}
+      {events.length === 0 ? (
+        <p className="mt-3 text-sm text-[#6c6054]">还没有状态记录。</p>
+      ) : (
+        <ol className="mt-4 grid gap-4">
+          {events.map((event) => (
+            <li key={event.id} className="grid grid-cols-[16px_1fr] gap-3">
+              <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-[#31271f]" />
+              <div>
+                <p className="text-sm font-semibold text-[#241c16]">
+                  {statusLabel(event.toStatus)}
+                  <span className="ml-2 font-normal text-[#6c6054]">{actorLabel(event.actor)}</span>
+                </p>
+                <p className="mt-1 text-xs text-[#6c6054]">{formatTime(event.occurredAt)}</p>
+                {event.versionNumber ? (
+                  <p className="mt-1 text-sm text-[#31271f]">第 {event.versionNumber} 版</p>
+                ) : null}
+                {event.noteCount ? (
+                  <p className="mt-1 text-sm text-[#31271f]">{event.noteCount} 条修改意见</p>
+                ) : null}
+                {event.trackingCompany || event.trackingNumber ? (
+                  <p className="mt-1 text-sm text-[#31271f]">
+                    {[event.trackingCompany, event.trackingNumber].filter(Boolean).join(" · ")}
+                  </p>
+                ) : null}
+                {event.imageUrl ? (
+                  <button
+                    type="button"
+                    className="mt-2 h-16 w-16 overflow-hidden rounded-[8px] border border-[#dccfbc]"
+                    onClick={() => onOpen(event.imageUrl || "", `第 ${event.versionNumber || ""} 版`)}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={event.imageUrl} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -501,7 +567,7 @@ export default function OrderDetailPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<UploadProgress>(null);
-  const [trackingCompany, setTrackingCompany] = useState("");
+  const [trackingCompany, setTrackingCompany] = useState("UPS");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [preview, setPreview] = useState<{ src: string; alt: string; kind: PreviewKind } | null>(
@@ -580,8 +646,8 @@ export default function OrderDetailPage() {
       const prefix =
         res.status === 409
           ? "订单状态已变化，请刷新页面后重试"
-          : res.status === 422
-            ? "Shopify 发货失败"
+          :         res.status === 422
+            ? "Shopify 操作失败"
             : res.status === 502
               ? "Shopify 状态同步失败"
               : "操作失败";
@@ -665,6 +731,20 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function onDeliver(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await postAction({ action: "deliver" });
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "标记送达失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading && !order) {
     return <p className="p-8 text-sm text-[#6c6054]">正在加载订单…</p>;
   }
@@ -686,6 +766,9 @@ export default function OrderDetailPage() {
     (order.businessStatus === "order_placed" ||
       order.businessStatus === "supplier_modification");
   const canShip = !blocked && order.businessStatus === "prepare_shipment";
+  const canDeliver =
+    !blocked &&
+    (order.businessStatus === "shipped" || order.businessStatus === "delivered");
   const nextVersion = order.nextVersion ?? (order.versionCount || 0) + 1;
   const isRevision = order.businessStatus === "supplier_modification";
 
@@ -700,6 +783,7 @@ export default function OrderDetailPage() {
         <span className="rounded-full border border-[#dccfbc] bg-[#f7f0e6] px-3 py-1 text-xs font-semibold text-[#5f564b]">
           {statusLabel(order.businessStatus)}
         </span>
+        <StatusDwellBadge status={order.businessStatus} enteredAt={order.statusEnteredAt} />
       </header>
       <p className="mt-2 text-sm text-[#6c6054]">
         {order.email || "无邮箱"} · 下单于 {formatTime(order.createdAt)}
@@ -709,6 +793,11 @@ export default function OrderDetailPage() {
 
       <section className="mt-6 rounded-[12px] border border-[#31271f] bg-[#31271f] p-5 text-white md:p-6">
         <h2 className="text-xl font-semibold">这一步要做什么</h2>
+        {statusDwell(order.businessStatus, order.statusEnteredAt) ? (
+          <p className="mt-3 text-sm text-white/90">
+            {statusDwell(order.businessStatus, order.statusEnteredAt)?.label}
+          </p>
+        ) : null}
         {blocked ? (
           <p className="mt-3 text-sm text-white/85">
             这个订单已取消或已全额退款，不需要继续处理（{order.blockedReason}）。
@@ -816,17 +905,19 @@ export default function OrderDetailPage() {
         {canShip ? (
           <form onSubmit={onShip} className="mt-4 max-w-md rounded-[10px] bg-white p-4 text-[#241c16]">
             <p className="text-sm text-[#6c6054]">
-              客户已批准第 {order.versionCount} 版。填写物流商和单号后，Shopify 订单会标记为已发货，并由 Shopify 给客户发送发货邮件。
+              客户已批准第 {order.versionCount} 版。选择物流商并填写单号后，Shopify 订单会标记为已发货。
             </p>
             <label className="mt-4 block text-sm font-medium">
               物流商
-              <input
-                className="mt-2 w-full rounded-[8px] border border-[#dccfbc] px-3 py-3"
+              <select
+                className="mt-2 w-full rounded-[8px] border border-[#dccfbc] bg-white px-3 py-3"
                 value={trackingCompany}
                 onChange={(e) => setTrackingCompany(e.target.value)}
-                placeholder="UPS / FedEx / DHL"
                 required
-              />
+              >
+                <option value="UPS">UPS</option>
+                <option value="FedEx">FedEx</option>
+              </select>
             </label>
             <label className="mt-4 block text-sm font-medium">
               物流单号
@@ -853,9 +944,24 @@ export default function OrderDetailPage() {
           </p>
         ) : null}
 
-        {order.businessStatus === "shipped" ? (
+        {canDeliver ? (
+          <form onSubmit={onDeliver} className="mt-4 max-w-md rounded-[10px] bg-white p-4 text-[#241c16]">
+            <p className="text-sm text-[#6c6054]">
+              已发货：{order.trackingCompany || "物流商"} · {order.trackingNumber || "—"}。确认客户已收到后，订单会先标为已送达，然后归档。
+            </p>
+            <button
+              type="submit"
+              disabled={busy}
+              className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#31271f] px-4 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              {busy ? "提交中…" : "已送达"}
+            </button>
+          </form>
+        ) : null}
+
+        {order.businessStatus === "archived" ? (
           <p className="mt-3 text-sm text-white/85">
-            已发货：{order.trackingCompany || "物流商"} · {order.trackingNumber || "—"}
+            已送达并已归档：{order.trackingCompany || "物流商"} · {order.trackingNumber || "—"}
           </p>
         ) : null}
       </section>
@@ -971,6 +1077,8 @@ export default function OrderDetailPage() {
           )}
         </article>
       </section>
+
+      <OrderTrail events={order.events || []} onOpen={openPreview} />
 
       <section className="mt-6 rounded-[12px] border border-[#dccfbc] bg-white p-5">
         <div className="flex items-center justify-between gap-3">
